@@ -62,35 +62,42 @@
       state.userEmail = email;
       state.isAdmin = Auth.isAdmin(email);
 
-      const sheetId = await resolveSheetId(email);
+      let sheetId = await resolveSheetId(email);
       if (!sheetId) {
         showScreen('no-sheet');
         return;
       }
 
-      state.sheetId = sheetId;
-      showScreen('main');
-      U.qs('#settings-admin').classList.toggle('hidden', !state.isAdmin);
-
-      let places;
+      // Load places before showing the main view — if this fails, self-heal
+      // or bail to the no-sheet screen rather than stranding the user on an
+      // empty main view with a broken sheet id.
+      let places = null;
       try {
         places = await Sheets.listPlaces(sheetId);
       } catch (e) {
         const msg = String((e && e.message) || '');
-        if (msg.includes('404') || msg.includes('403')) {
-          // Cached sheet id points to something we can no longer read — wipe
-          // and re-resolve (may re-create for admin or prompt Picker for a friend).
-          console.warn('Stale sheet cache, re-resolving…', e);
+        const stale = msg.includes('404') || msg.includes('403');
+        if (!stale) throw e;
+        console.warn('Stale sheet cache, re-resolving…', e);
+        Auth.clearSavedSheetId(email);
+        sheetId = await resolveSheetId(email);
+        if (!sheetId) { showScreen('no-sheet'); return; }
+        try {
+          places = await Sheets.listPlaces(sheetId);
+        } catch (e2) {
+          // Second attempt failed — bad data behind a cached id we can't fix
+          // automatically. Clear everything sheet-related and show no-sheet.
+          console.warn('Self-heal retry failed, giving up on cached id.', e2);
           Auth.clearSavedSheetId(email);
-          const fresh = await resolveSheetId(email);
-          if (!fresh) { showScreen('no-sheet'); return; }
-          state.sheetId = fresh;
-          places = await Sheets.listPlaces(fresh);
-        } else {
-          throw e;
+          showScreen('no-sheet');
+          return;
         }
       }
+
+      state.sheetId = sheetId;
       state.places = places;
+      showScreen('main');
+      U.qs('#settings-admin').classList.toggle('hidden', !state.isAdmin);
       tryGetLocation();
       render();
 
