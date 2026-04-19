@@ -218,6 +218,10 @@
     // Form wiring
     wireForm();
 
+    // Labels settings
+    U.qs('#btn-labels').addEventListener('click', openLabelsSheet);
+    U.qs('#btn-labels-reset').addEventListener('click', resetLabels);
+
     // Admin panel
     U.qs('#btn-admin').addEventListener('click', openAdminPanel);
     U.qs('#btn-admin-add').addEventListener('click', adminAddUser);
@@ -335,18 +339,31 @@
     list.forEach((p) => container.appendChild(placeCard(p)));
   }
 
+  function renderTagPill(tag) {
+    const s = Labels.get(tag);
+    if (!s) {
+      return `<span class="tag-pill">${U.escapeHtml(tag)}</span>`;
+    }
+    const bg = Labels.tint(s.color, 0.14);
+    const border = Labels.tint(s.color, 0.3);
+    return `<span class="tag-pill styled" style="--lb:${bg};--lf:${s.color};--lbr:${border}">` +
+      `<i class="ph-fill ph-${U.escapeHtml(s.icon)}"></i>${U.escapeHtml(tag)}</span>`;
+  }
+
   function placeCard(p) {
     const card = document.createElement('div');
     card.className = 'place-card';
     const dist = state.userLocation ? U.distanceMeters(state.userLocation, p) : null;
     const distLabel = dist != null && isFinite(dist) ? U.formatDistance(dist) : '';
-    const visitedBit = p.visited ? '<span class="visited-dot"></span>' : '';
     const metaParts = [p.neighborhood, p.city].filter(Boolean).join(' · ');
-    const tagsHtml = (p.tags.slice(0, 3).map((t) => `<span class="tag-pill">${U.escapeHtml(t)}</span>`).join('')) +
+    const visitedBadge = p.visited
+      ? '<span class="visited-chip" title="Visited"><i class="ph-fill ph-check-circle"></i></span>'
+      : '';
+    const tagsHtml = p.tags.slice(0, 3).map(renderTagPill).join('') +
       (p.tags.length > 3 ? `<span class="tag-pill">+${p.tags.length - 3}</span>` : '');
     card.innerHTML = `
       <div class="place-card-head">
-        <div class="place-card-name">${visitedBit}${U.escapeHtml(p.name)}</div>
+        <div class="place-card-name">${U.escapeHtml(p.name)}${visitedBadge}</div>
         ${distLabel ? `<div class="place-card-dist">${distLabel}</div>` : ''}
       </div>
       ${metaParts ? `<div class="place-card-meta"><i class="ph ph-map-pin"></i>${U.escapeHtml(metaParts)}</div>` : ''}
@@ -497,7 +514,7 @@
           ${p.city ? `<span class="chip"><i class="ph ph-buildings"></i>${U.escapeHtml(p.city)}</span>` : ''}
           ${p.visited ? '<span class="chip" style="background:transparent;color:var(--success);border:1px solid var(--success);"><i class="ph-fill ph-check-circle"></i>Visited</span>' : ''}
         </div>
-        ${p.tags.length ? `<div class="place-card-tags">${p.tags.map((t) => `<span class="tag-pill">${U.escapeHtml(t)}</span>`).join('')}</div>` : ''}
+        ${p.tags.length ? `<div class="place-card-tags">${p.tags.map(renderTagPill).join('')}</div>` : ''}
         <div class="detail-notes" data-notes contenteditable="true" spellcheck="true">${U.escapeHtml(p.notes) || 'Tap to add a note…'}</div>
         ${p.address ? `<div class="detail-row"><i class="ph ph-map-trifold"></i><span>${U.escapeHtml(p.address)}</span></div>` : ''}
         ${p.source_url ? `<div class="detail-row"><i class="ph ph-link-simple"></i><a href="${encodeURI(p.source_url)}" target="_blank" rel="noopener">${U.escapeHtml(p.source_url)}</a></div>` : ''}
@@ -759,6 +776,141 @@
     if (v === '' || v == null) return null;
     const n = Number(v);
     return isNaN(n) ? null : n;
+  }
+
+  // ------------------------------------------------------------------
+  // Labels settings
+  // ------------------------------------------------------------------
+  function openLabelsSheet() {
+    renderLabelsEditor();
+    openSheet('#labels-sheet');
+  }
+
+  function renderLabelsEditor() {
+    const list = U.qs('#labels-list');
+    list.innerHTML = '';
+    const inUse = new Set();
+    state.places.forEach((p) => p.tags.forEach((t) => t && inUse.add(t.toLowerCase())));
+    const labeled = new Set(Object.keys(Labels.all()));
+    const tags = Array.from(new Set([...inUse, ...labeled])).sort();
+    if (!tags.length) {
+      list.innerHTML = '<div class="muted small">Add a tag to a place first, then come back to style it.</div>';
+      return;
+    }
+    tags.forEach((tag) => list.appendChild(labelRow(tag)));
+  }
+
+  function labelPreviewHtml(tag) {
+    const s = Labels.get(tag);
+    if (s) {
+      return `<i class="ph-fill ph-${U.escapeHtml(s.icon)}" style="color:${s.color}"></i>` +
+        `<span>${U.escapeHtml(tag)}</span>`;
+    }
+    return `<i class="ph ph-circle-dashed muted"></i><span class="muted">${U.escapeHtml(tag)}</span>`;
+  }
+
+  function labelRow(tag) {
+    const row = document.createElement('div');
+    row.className = 'label-row';
+    row.dataset.tag = tag;
+    row.innerHTML = `
+      <button class="label-row-head">
+        <div class="label-preview">${labelPreviewHtml(tag)}</div>
+        <i class="ph ph-caret-down chevron"></i>
+      </button>
+      <div class="label-editor hidden"></div>
+    `;
+    row.querySelector('.label-row-head').addEventListener('click', () => toggleLabelEditor(row));
+    return row;
+  }
+
+  function toggleLabelEditor(row) {
+    const editor = row.querySelector('.label-editor');
+    const isOpen = !editor.classList.contains('hidden');
+    U.qsa('#labels-list .label-editor').forEach((e) => e.classList.add('hidden'));
+    U.qsa('#labels-list .label-row').forEach((r) => r.classList.remove('open'));
+    if (isOpen) return;
+    editor.classList.remove('hidden');
+    row.classList.add('open');
+    fillLabelEditor(row, editor);
+  }
+
+  function fillLabelEditor(row, editor) {
+    const tag = row.dataset.tag;
+    const existing = Labels.get(tag);
+    const chosen = existing
+      ? { ...existing }
+      : { icon: Labels.ICONS[0], color: Labels.PALETTE[0] };
+
+    editor.innerHTML = `
+      <div class="label-editor-section">
+        <div class="label-editor-label">Icon</div>
+        <div class="icon-grid"></div>
+      </div>
+      <div class="label-editor-section">
+        <div class="label-editor-label">Color</div>
+        <div class="color-grid"></div>
+      </div>
+      <div class="label-editor-actions">
+        <button class="btn-ghost" data-remove>${existing ? 'Remove style' : 'Cancel'}</button>
+        <button class="btn btn-primary" data-save>Save</button>
+      </div>
+    `;
+
+    const iconGrid = editor.querySelector('.icon-grid');
+    Labels.ICONS.forEach((name) => {
+      const b = document.createElement('button');
+      b.className = 'icon-choice' + (name === chosen.icon ? ' active' : '');
+      b.dataset.icon = name;
+      b.innerHTML = `<i class="ph-fill ph-${name}"></i>`;
+      b.style.color = chosen.color;
+      b.addEventListener('click', () => {
+        chosen.icon = name;
+        U.qsa('.icon-choice', iconGrid).forEach((x) => x.classList.toggle('active', x.dataset.icon === name));
+      });
+      iconGrid.appendChild(b);
+    });
+
+    const colorGrid = editor.querySelector('.color-grid');
+    Labels.PALETTE.forEach((hex) => {
+      const b = document.createElement('button');
+      b.className = 'color-choice' + (hex === chosen.color ? ' active' : '');
+      b.dataset.color = hex;
+      b.style.background = hex;
+      b.addEventListener('click', () => {
+        chosen.color = hex;
+        U.qsa('.color-choice', colorGrid).forEach((x) => x.classList.toggle('active', x.dataset.color === hex));
+        U.qsa('.icon-choice', iconGrid).forEach((x) => { x.style.color = hex; });
+      });
+      colorGrid.appendChild(b);
+    });
+
+    editor.querySelector('[data-save]').addEventListener('click', () => {
+      Labels.set(tag, chosen);
+      refreshLabelRow(row);
+      toggleLabelEditor(row);
+      render();
+    });
+    editor.querySelector('[data-remove]').addEventListener('click', () => {
+      if (existing) {
+        Labels.remove(tag);
+        refreshLabelRow(row);
+        render();
+      }
+      toggleLabelEditor(row);
+    });
+  }
+
+  function refreshLabelRow(row) {
+    const preview = row.querySelector('.label-preview');
+    if (preview) preview.innerHTML = labelPreviewHtml(row.dataset.tag);
+  }
+
+  function resetLabels() {
+    Labels.reset();
+    renderLabelsEditor();
+    render();
+    U.toast('Restored default labels');
   }
 
   // ------------------------------------------------------------------

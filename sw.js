@@ -1,5 +1,5 @@
 // Pins service worker — bumps CACHE_NAME on every deploy so old shells get evicted.
-const CACHE_NAME = 'pins-shell-v2';
+const CACHE_NAME = 'pins-shell-v3';
 
 const SHELL = [
   './',
@@ -12,6 +12,7 @@ const SHELL = [
   './places.js',
   './maps.js',
   './picker.js',
+  './labels.js',
   './app.js',
   './manifest.json',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',

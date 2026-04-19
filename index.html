@@ -56,6 +56,7 @@
             <input id="search" type="search" placeholder="Search" autocomplete="off">
           </div>
           <button id="btn-filter" class="icon-btn" aria-label="Filters"><i class="ph ph-funnel"></i></button>
+          <button id="btn-labels" class="icon-btn" aria-label="Customize labels"><i class="ph ph-palette"></i></button>
           <button id="btn-admin" class="icon-btn hidden" aria-label="Admin"><i class="ph ph-shield-star"></i></button>
         </div>
         <div id="active-filters"></div>
@@ -209,6 +210,25 @@
       </div>
     </div>
 
+    <!-- Labels settings -->
+    <div id="labels-sheet" class="sheet hidden">
+      <div class="sheet-inner">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <h2 class="display">Labels</h2>
+          <button class="icon-btn sheet-close" aria-label="Close"><i class="ph ph-x"></i></button>
+        </div>
+        <div class="sheet-body">
+          <p class="muted small">Tap any tag to choose its icon and color. The first styled tag on a place colors its pin on the map.</p>
+          <div id="labels-list" class="labels-list"></div>
+        </div>
+        <div class="sheet-footer">
+          <button id="btn-labels-reset" class="btn-ghost">Reset to defaults</button>
+          <button class="btn btn-primary sheet-close">Done</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Admin panel -->
     <div id="admin-sheet" class="sheet hidden">
       <div class="sheet-inner">
@@ -290,6 +310,7 @@
   <script src="places.js" defer></script>
   <script src="maps.js" defer></script>
   <script src="picker.js" defer></script>
+  <script src="labels.js" defer></script>
   <script src="app.js" defer></script>
   <script>
     if ('serviceWorker' in navigator) {

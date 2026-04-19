@@ -4,20 +4,27 @@
   let markerLayer = null;
   let userLayer = null;
 
-  function svgPin(color) {
+  function svgPin(color, visited) {
+    const check = visited
+      ? '<circle cx="24" cy="8" r="6" fill="#FFFFFF"/><path d="M20.5 8l2.5 2.5 4.5-5" fill="none" stroke="#3B7A34" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+      : '';
     const s = encodeURIComponent(
       `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 44" width="32" height="44">
         <path d="M16 0C7.2 0 0 7.1 0 16c0 11.6 16 28 16 28s16-16.4 16-28C32 7.1 24.8 0 16 0z" fill="${color}"/>
         <circle cx="16" cy="16" r="6" fill="#FFFFFF"/>
+        ${check}
       </svg>`
     );
     return `data:image/svg+xml;charset=UTF-8,${s}`;
   }
 
   function iconFor(place) {
-    const color = place.visited ? '#7A9B76' : '#D97757';
+    // Color derives from the place's first styled label (per-user config).
+    // Falls back to the app's terracotta accent when no labels match.
+    const style = window.Labels ? Labels.styleFor(place) : null;
+    const color = style ? style.color : '#D97757';
     return L.icon({
-      iconUrl: svgPin(color),
+      iconUrl: svgPin(color, !!place.visited),
       iconSize: [28, 38],
       iconAnchor: [14, 38],
       popupAnchor: [0, -34],
