@@ -652,25 +652,56 @@
         renderFormTags();
       }
     });
-    tagInput.addEventListener('input', U.debounce(() => {
-      const q = tagInput.value.trim().toLowerCase();
+    function refreshTagSuggestions(query) {
+      const q = (query || '').trim().toLowerCase();
       tagSug.innerHTML = '';
-      if (!q) { tagSug.classList.add('hidden'); return; }
-      const tagCounts = new Map();
-      state.places.forEach((p) => p.tags.forEach((t) => tagCounts.set(t, (tagCounts.get(t) || 0) + 1)));
-      const matches = Array.from(tagCounts.entries())
-        .filter(([t]) => t.toLowerCase().includes(q) && !state.pendingFormTags.includes(t))
-        .sort((a, b) => b[1] - a[1]).slice(0, 6);
-      if (!matches.length) { tagSug.classList.add('hidden'); return; }
-      matches.forEach(([t, n]) => {
+
+      // Count tags in use across all places (for "X places" hint + ranking).
+      const counts = new Map();
+      state.places.forEach((p) => p.tags.forEach((t) => {
+        const k = t.toLowerCase();
+        counts.set(k, (counts.get(k) || 0) + 1);
+      }));
+
+      // Union: tags in use + every styled label (so presets are discoverable).
+      const keys = new Set([...counts.keys(), ...Object.keys(Labels.all())]);
+
+      const pending = new Set(state.pendingFormTags.map((t) => t.toLowerCase()));
+      const items = Array.from(keys)
+        .filter((t) => !pending.has(t))
+        .filter((t) => !q || t.includes(q))
+        .sort((a, b) => {
+          const ca = counts.get(a) || 0;
+          const cb = counts.get(b) || 0;
+          if (cb !== ca) return cb - ca;              // most-used first
+          return a.localeCompare(b);                  // then alpha
+        })
+        .slice(0, 10);
+
+      if (!items.length) { tagSug.classList.add('hidden'); return; }
+
+      items.forEach((t) => {
+        const s = Labels.get(t);
+        const count = counts.get(t) || 0;
+        const icon = s
+          ? `<i class="ph-fill ph-${U.escapeHtml(s.icon)}" style="color:${s.color}"></i>`
+          : '<i class="ph ph-tag" style="color:var(--muted)"></i>';
+        const sub = count
+          ? `${count} place${count === 1 ? '' : 's'}`
+          : (s ? 'preset label' : '');
         const item = document.createElement('div');
         item.className = 'autocomplete-item';
-        item.innerHTML = `<div class="primary">#${U.escapeHtml(t)}</div><div class="secondary">${n} place${n === 1 ? '' : 's'}</div>`;
+        item.innerHTML = `<div class="primary">${icon} ${U.escapeHtml(t)}</div>` +
+          (sub ? `<div class="secondary">${sub}</div>` : '');
         item.addEventListener('click', () => { addFormTag(t); tagInput.value = ''; tagSug.classList.add('hidden'); });
         tagSug.appendChild(item);
       });
       tagSug.classList.remove('hidden');
-    }, 120));
+    }
+
+    // Show presets as soon as the tag input is focused (even with no query).
+    tagInput.addEventListener('focus', () => refreshTagSuggestions(tagInput.value));
+    tagInput.addEventListener('input', U.debounce(() => refreshTagSuggestions(tagInput.value), 120));
 
     U.qs('#btn-form-cancel').addEventListener('click', () => closeSheet('#form-sheet'));
     U.qs('#btn-form-save').addEventListener('click', saveForm);
