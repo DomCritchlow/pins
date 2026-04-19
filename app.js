@@ -187,12 +187,22 @@
       catch (e) { console.error(e); U.toast('Sign-in failed. Try again.'); }
     });
     U.qs('#btn-retry').addEventListener('click', async () => {
-      Auth.clearSavedSheetId();
+      Auth.clearSavedSheetId(state.userEmail);
       await enterApp();
+    });
+    U.qs('#btn-reopen').addEventListener('click', async () => {
+      try {
+        if (!state.userEmail) state.userEmail = await Auth.getUserEmail();
+        const id = await Picker.pickSheet({ title: 'Tap your Pins notebook' });
+        Auth.saveSheetId(id, state.userEmail);
+        await enterApp();
+      } catch (e) {
+        console.warn('Picker cancelled or failed:', e);
+      }
     });
     U.qs('#btn-signout').addEventListener('click', () => {
       Auth.signOut();
-      Auth.clearSavedSheetId();
+      Auth.clearSavedSheetId(state.userEmail);
       showScreen('signin');
     });
 
