@@ -229,9 +229,21 @@
           </div>
           <div class="field">
             <label for="admin-email">Add a friend</label>
-            <p class="muted small">Creates a new notebook in your Drive and shares it with their Google account. They just sign in to see it.</p>
+            <p class="muted small">Creates a notebook in your Drive and shares it with their Google account. Copy the invite link that appears and send it to them.</p>
             <input id="admin-email" type="email" placeholder="friend@example.com" autocomplete="off" inputmode="email">
             <div id="admin-status" class="muted small"></div>
+            <div id="admin-last-invite" class="invite-box hidden">
+              <label class="muted small">Invite link</label>
+              <div class="invite-row">
+                <input id="admin-last-invite-url" type="text" readonly>
+                <button id="btn-copy-invite" class="icon-btn" aria-label="Copy"><i class="ph ph-copy"></i></button>
+              </div>
+              <p class="muted small">Send this to your friend. They'll open it, sign in, and confirm access to their notebook.</p>
+            </div>
+          </div>
+          <div class="field">
+            <label>Friends</label>
+            <div id="admin-friends" class="friend-list"></div>
           </div>
         </div>
         <div class="sheet-footer">
@@ -277,6 +289,7 @@
   <script src="sheets.js" defer></script>
   <script src="places.js" defer></script>
   <script src="maps.js" defer></script>
+  <script src="picker.js" defer></script>
   <script src="app.js" defer></script>
   <script>
     if ('serviceWorker' in navigator) {

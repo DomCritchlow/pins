@@ -1,17 +1,21 @@
-// Google Identity Services (GIS) token flow + Drive sheet resolution + userinfo.
+// Google Identity Services (GIS) token flow + userinfo + minimal Drive lookup.
+//
+// Scopes are intentionally tight: drive.file only. That means this app can
+// only see files it *created* (admin path) or files the user *opened* via
+// Google Picker (friend path). Nothing else.
 (function () {
   const SCOPES = [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive.file',           // create + manage permissions on sheets we own
-    'https://www.googleapis.com/auth/drive.metadata.readonly', // find sheets shared with us
+    'https://www.googleapis.com/auth/drive.file',
     'openid',
     'email',
   ].join(' ');
 
+  // Sheet id persists across sessions so we don't need Picker every time.
+  // Token stays session-only.
   const TOKEN_KEY = 'pins_token';
   const TOKEN_EXP_KEY = 'pins_token_exp';
-  const SHEET_KEY = 'pins_sheet_id';
   const EMAIL_KEY = 'pins_user_email';
+  const SHEET_KEY = 'pins_sheet_id';
 
   let tokenClient = null;
 
@@ -66,8 +70,9 @@
     }
     sessionStorage.removeItem(TOKEN_KEY);
     sessionStorage.removeItem(TOKEN_EXP_KEY);
-    sessionStorage.removeItem(SHEET_KEY);
     sessionStorage.removeItem(EMAIL_KEY);
+    // Note: we intentionally do NOT clear the saved sheet id on sign-out —
+    // if the same user signs back in on this device, we want to skip Picker.
   }
 
   async function getUserEmail() {
@@ -81,30 +86,33 @@
     return email;
   }
 
-  // Look up the sheet named exactly "<prefix> - <email>". Works for both owned
-  // and shared sheets (drive.metadata.readonly returns both).
-  async function resolveSheetForEmail(email) {
-    const cached = sessionStorage.getItem(SHEET_KEY);
-    if (cached) return cached;
-    const prefix = (window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker');
-    const name = `${prefix} - ${email}`.replace(/'/g, "\\'");
-    const q = `name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
+  function getSavedSheetId() {
+    return localStorage.getItem(SHEET_KEY);
+  }
+
+  function saveSheetId(id) {
+    if (id) localStorage.setItem(SHEET_KEY, id);
+  }
+
+  function clearSavedSheetId() {
+    localStorage.removeItem(SHEET_KEY);
+  }
+
+  // Drive list restricted to files this app (OAuth client) has created or this
+  // user has opened via Picker. Admin sees all sheets they provisioned; a
+  // friend sees only the one they've confirmed via Picker.
+  async function listAppSheets() {
+    const prefix = (window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker').replace(/'/g, "\\'");
+    const q = `name contains '${prefix}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
     const url =
       'https://www.googleapis.com/drive/v3/files?fields=' +
-      encodeURIComponent('files(id,name,modifiedTime,owners(emailAddress))') +
-      '&pageSize=5&orderBy=modifiedTime desc&q=' +
+      encodeURIComponent('files(id,name,modifiedTime)') +
+      '&pageSize=50&orderBy=modifiedTime desc&q=' +
       encodeURIComponent(q);
     const res = await authedFetch(url);
     if (!res.ok) throw new Error(`drive ${res.status}`);
     const body = await res.json();
-    const files = body.files || [];
-    if (!files.length) return null;
-    sessionStorage.setItem(SHEET_KEY, files[0].id);
-    return files[0].id;
-  }
-
-  function cacheSheetId(id) {
-    sessionStorage.setItem(SHEET_KEY, id);
+    return body.files || [];
   }
 
   function isAdmin(email) {
@@ -133,6 +141,7 @@
 
   window.Auth = {
     signIn, signOut, getToken, getUserEmail,
-    resolveSheetForEmail, cacheSheetId, isAdmin, authedFetch,
+    getSavedSheetId, saveSheetId, clearSavedSheetId,
+    listAppSheets, isAdmin, authedFetch,
   };
 })();

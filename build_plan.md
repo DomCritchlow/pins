@@ -32,6 +32,7 @@ Admin owns a single Google Cloud project (one OAuth Client ID, one API key). Adm
 | Sheet discovery | Google Drive API v3 | Lets the app auto-resolve which sheet belongs to the signed-in user |
 | Place enrichment | Google Places API (New) | Auto-fills address, lat/lng, address_components (city/state/country/neighborhood), photo name. New (not legacy) because it supports browser CORS and is the only path open to new GCP projects. |
 | Auth | Google Identity Services (GIS) — OAuth 2.0 token client | Current replacement for `gapi.auth2`, no backend needed |
+| File authorization | Google Picker API | Lets non-admin users "open" their one shared sheet into the narrow `drive.file` scope without ever exposing broader Drive access |
 | Hosting | GitHub Pages | Free, HTTPS, auto-deploy on push |
 | Icons | Phosphor Icons (CDN) | Trendy, iOS-feeling, free |
 | Fonts | Inter (UI) + Instrument Serif (display) via Google Fonts | Modern + a hint of classy |
@@ -80,6 +81,7 @@ One sheet named `places`. Row 1 is the header, data starts at row 2. Columns in 
 ├── sheets.js           # CRUD against the resolved sheet
 ├── places.js           # Places Autocomplete + Details + photo URL builder
 ├── maps.js             # Leaflet init + marker rendering
+├── picker.js           # Google Picker — "open" a shared sheet into drive.file
 ├── app.js              # top-level controller, views, filter state, render
 ├── .nojekyll
 ├── icons/
@@ -93,33 +95,34 @@ One sheet named `places`. Row 1 is the header, data starts at row 2. Columns in 
 
 ## Auth, sheet resolution, and provisioning
 
-**Scopes** requested on sign-in:
-- `https://www.googleapis.com/auth/spreadsheets` — read/write sheet data
-- `https://www.googleapis.com/auth/drive.file` — create sheets and manage permissions on sheets this app created (admin path only)
-- `https://www.googleapis.com/auth/drive.metadata.readonly` — find sheets shared with us (regular user path)
-- `openid`, `email` — identify the signed-in user so we can name their sheet and detect admin
+**Scopes** requested on sign-in — deliberately tight:
+- `https://www.googleapis.com/auth/drive.file` — per-file access, scoped only to sheets this OAuth client created (admin's path) or the user confirmed via Google Picker (friend's path). Google's consent screen phrases this "See, edit, create, and delete only the specific Google Drive files you use with this app." No broader Sheets/Drive scope is requested.
+- `openid`, `email` — identify the signed-in user for sheet naming and admin detection.
 
-**Naming convention**: every user's sheet is named exactly `PlaceTracker - <their email>`. Exact-name lookup, no ambiguity.
+**Naming convention**: every user's sheet is named exactly `PlaceTracker - <their email>`. Exact-name match for resolution.
 
-**Admin detection**: `config.ADMIN_CONTACT` holds the admin's email. If the signed-in user matches, `state.isAdmin = true`.
+**Admin detection**: `config.ADMIN_CONTACT` holds the admin's email. If the signed-in user matches (case-insensitive), `state.isAdmin = true`.
 
-**User-facing flow on sign-in**:
+**Sheet id storage**: once we know which sheet belongs to the signed-in user (by create, Drive lookup, or Picker selection), the id is cached in `localStorage` so the user skips the discovery flow on subsequent sessions on the same device. Token stays in `sessionStorage` (per spec).
 
-1. App loads → shows "Sign in with Google".
-2. After consent, app fetches the user's email via OIDC `userinfo`.
-3. App calls Drive `files.list` with `q=name='PlaceTracker - <email>'`.
-4. **If found** → cache ID, load data.
-5. **If not found and user is admin** → app creates a sheet in admin's own Drive titled `PlaceTracker - <admin email>`, writes the header row, no sharing needed. Admin continues to the main app.
-6. **If not found and user is not admin** → show "Your sheet isn't set up yet — ask Dominic" screen with a refresh button. Admin must provision the user via the in-app Admin panel.
+### Resolution flow on sign-in
 
-**Admin panel** (visible only when `state.isAdmin`):
-- A shield-star icon in the header opens a slide-up sheet.
-- Shows admin's own notebook with a link to open it in Google Sheets.
-- "Add a friend" input + button → calls `Sheets.createSheet({ forEmail, shareWith: forEmail })`:
-  - Creates sheet in admin's Drive named `PlaceTracker - <friend email>`.
-  - Writes header row.
-  - Grants friend editor access via Drive `permissions.create` (no notification email — admin tells them out-of-band).
-- Friend then signs in and their Drive lookup finds the shared sheet.
+1. **Cache check** — `localStorage[pins_sheet_id]`. If present, use it.
+2. **Drive list via `drive.file`** — returns files this OAuth client created OR the user opened via Picker. Admin sees their own + all friend sheets they provisioned. A returning friend sees the one sheet they confirmed via Picker on a previous session.
+   - If the list contains a file named exactly `PlaceTracker - <email>`, use it.
+3. **Admin first sign-in** (no file found) → `Sheets.createSheet` in admin's own Drive, no sharing. Cache id.
+4. **Friend first sign-in on this device** → check for a pending invite id (captured from `?invite=<id>` URL param on boot). If present, show Google Picker with `NAV_HIDDEN` and a query filter on the prefix. Friend taps their notebook; the selection "opens" the file into `drive.file` for this user+app, resolving the access problem without ever granting broader scope.
+5. **Friend with no invite** → show "Almost there" screen with the admin's contact email. Admin uses the in-app Admin panel to generate an invite link.
+
+### Admin panel (visible only when `state.isAdmin`)
+
+- Shield-star icon in the header opens a slide-up sheet.
+- **Your notebook** — title + direct link to open in Google Sheets.
+- **Add a friend** — email input + button. On submit:
+  1. `Sheets.createSheet({ forEmail, shareWith: forEmail })` creates the sheet in admin's Drive, writes the header, and grants the friend editor access via Drive `permissions.create`.
+  2. App constructs `${origin}/pins/?invite=<sheet_id>` and copies to admin's clipboard.
+  3. Invite link is also shown in a copy-to-clipboard box inline.
+- **Friends** — list of every `PlaceTracker - *` sheet admin has created (excluding their own), each with a "Copy invite" button so admin can resend the link at any time.
 
 Token expires after 1 hour. GIS re-requests silently on expiry.
 
@@ -267,7 +270,7 @@ Phosphor via CDN. Use `ph` (regular) and `ph-fill` (filled) on `<span>` tags.
 See [README.md](README.md). Short version:
 
 1. Create GCP project.
-2. Enable: Sheets API, Drive API, **Places API (New)**.
+2. Enable: Sheets API, Drive API, **Places API (New)**, Google Picker API.
 3. Create OAuth 2.0 Client ID (Web App) — add GitHub Pages URL as authorized JS origin.
 4. Create an API Key — restrict to HTTP referrer of the GitHub Pages URL + to Places API (New) only. Set a daily quota cap.
 5. Put credentials in `.env` (local) or repo Secrets (CI). `config.js` is generated from them.

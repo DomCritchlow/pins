@@ -13,21 +13,20 @@ Do this once. Users never need to touch any of it.
 ### 1. Create the Google Cloud project
 
 1. Go to <https://console.cloud.google.com/> and create a new project (any name — e.g. "Pins").
-2. In **APIs & Services → Library**, enable all three:
+2. In **APIs & Services → Library**, enable all four:
    - Google Sheets API
    - Google Drive API
    - **Places API (New)** — the tile is labeled "Places API (New)". The older "Places API" tile doesn't support browser CORS and can't be enabled on new projects anyway.
+   - Google Picker API
 
 ### 2. OAuth consent screen
 
 1. **APIs & Services → OAuth consent screen**.
 2. User type: **External**. Publishing status can stay "Testing" while your group is small — just add each user's Google email under **Test users**.
 3. App name: `Pins`. User support email: yours.
-4. Scopes to declare:
-   - `.../auth/spreadsheets` — read/write the user's sheet
-   - `.../auth/drive.file` — create new sheets and grant access (admin only uses this, but it's requested for all sign-ins so incremental auth isn't needed)
-   - `.../auth/drive.metadata.readonly` — find the sheet shared with each user
-   - `openid`, `email` — identify the signed-in user (used for naming their sheet and detecting admin)
+4. Scopes to declare — just these three, deliberately tight:
+   - `.../auth/drive.file` — per-file access, limited to sheets this app created (admin) or the user confirmed via Google Picker (friend). Google's consent screen phrases it "See, edit, create, and delete only the specific Google Drive files you use with this app."
+   - `openid`, `email` — identify the signed-in user (used for naming the sheet and detecting admin).
 
 ### 3. OAuth Client ID
 
@@ -41,7 +40,7 @@ Do this once. Users never need to touch any of it.
 1. **Credentials → Create credentials → API key**.
 2. Restrict it:
    - **Application restrictions**: HTTP referrers → add `https://<your-username>.github.io/*` (plus `http://localhost:8000/*` for local testing).
-   - **API restrictions**: select **Places API (New)** only.
+   - **API restrictions**: select **Places API (New)** and **Google Picker API** (the Picker needs the same key to show your friends the file-confirm dialog).
 3. Copy the key → you'll put it in `.env` (step 6), not directly in `config.js`. `config.js` is generated from `.env` and is gitignored so the keys never hit the repo.
 4. **Cap the quota.** In **APIs & Services → Quotas & System Limits**, filter to Places API (New) and set a low daily cap on request-per-day metrics (500/day is plenty for 5 users). This is the primary guardrail: if the key is ever misused, you hit the cap and the app stops working for a day — you never get surprise-billed.
 5. **Set a billing alert.** In **Billing → Budgets & alerts**, create a budget of $5/month with an email alert at 50% and 100%. Belt-and-suspenders alongside the quota cap.
@@ -64,19 +63,22 @@ The built `config.js` only exists in the Pages deployment artifact, not in the r
 
 ## Onboarding a user
 
-No spreadsheet busywork — everything happens in the app.
+No spreadsheet busywork — everything happens inside the app.
 
-**First admin login**: open the deployed app, sign in with your admin Google account (the one you put in `PINS_ADMIN_CONTACT`). The app notices you're the admin and auto-creates `PlaceTracker - <your email>` in your Drive. You're in.
+**First admin login**: open the deployed app, sign in with your admin Google account (the one in `PINS_ADMIN_CONTACT`). The app detects you're the admin and auto-creates `PlaceTracker - <your email>` in your Drive. You're in.
 
 **Add a friend**:
 
 1. Tap the **shield-star** icon in the header.
 2. Type their Google email → tap **Create & share**.
-3. Send them the app URL.
+3. The app generates an **invite link** (e.g. `https://domcritchlow.github.io/pins/?invite=<sheet_id>`) and copies it to your clipboard.
+4. Send the link to your friend via text/email/whatever.
 
-What the app does behind the scenes: creates `PlaceTracker - <friend email>` in *your* Drive, writes the schema header row, grants the friend editor access via Drive permissions.
+Behind the scenes: the app creates `PlaceTracker - <friend email>` in *your* Drive, writes the schema header, and grants the friend editor access via Drive permissions.
 
-When the friend signs in, the app's Drive lookup finds the sheet shared with them and loads it. If they see the "Almost there" screen, you forgot step 2.
+**Friend's first sign-in** (why the invite link matters): because the app only asks for `drive.file` scope, the friend's app can't search their Drive — it can only see files they've explicitly confirmed. So when they click the invite link and sign in, the app pops up a Google Picker showing the one notebook you shared with them. They tap it once to confirm, and the app stores the association locally. No Picker on subsequent sign-ins from that device.
+
+**Can re-copy any existing friend's link** from the Admin panel at any time — each friend in the list has a "Copy invite" button.
 
 ---
 
@@ -121,6 +123,7 @@ Both `.env` and `config.js` are gitignored, so you can't accidentally commit the
 | [sheets.js](sheets.js) | Sheet CRUD |
 | [places.js](places.js) | Places Autocomplete + Details + photo URLs |
 | [maps.js](maps.js) | Leaflet setup and markers |
+| [picker.js](picker.js) | Google Picker integration (friend's first-time "which sheet?" confirm) |
 | [app.js](app.js) | Controller, state, rendering |
 | [manifest.json](manifest.json) | PWA manifest + share_target |
 | [sw.js](sw.js) | Service worker (shell caching) |

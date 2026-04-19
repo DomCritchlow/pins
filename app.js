@@ -22,21 +22,29 @@
   async function boot() {
     wireStaticEvents();
     U.qs('#admin-contact').textContent = window.CONFIG.ADMIN_CONTACT || '';
+
+    // Parse URL params BEFORE any async work so we don't lose them to another
+    // tab navigation. Two possible param sets:
+    //   - Share Target entry (?url=&title=&text=)
+    //   - Invite link (?invite=<sheet_id>) — friend first sign-in
+    const params = new URLSearchParams(location.search);
+    if (params.has('invite')) {
+      sessionStorage.setItem('pins_pending_invite', params.get('invite'));
+    }
+    if (params.has('url') || params.has('text') || params.has('title')) {
+      sessionStorage.setItem('pins_pending_share', JSON.stringify({
+        title: params.get('title') || '',
+        url: params.get('url') || params.get('text') || '',
+      }));
+    }
+    if (params.has('invite') || params.has('url') || params.has('text') || params.has('title')) {
+      history.replaceState({}, '', location.pathname);
+    }
+
     if (Auth.getToken()) {
       await enterApp();
     } else {
       showScreen('signin');
-    }
-    // Parse shared URL params (Share Target entry).
-    const params = new URLSearchParams(location.search);
-    if (params.has('url') || params.has('text') || params.has('title')) {
-      // Wait until we're in the main view before opening form.
-      const pending = {
-        title: params.get('title') || '',
-        url: params.get('url') || params.get('text') || '',
-      };
-      sessionStorage.setItem('pins_pending_share', JSON.stringify(pending));
-      history.replaceState({}, '', location.pathname);
     }
   }
 
@@ -54,15 +62,7 @@
       state.userEmail = email;
       state.isAdmin = Auth.isAdmin(email);
 
-      let sheetId = await Auth.resolveSheetForEmail(email);
-
-      // Admin's own sheet doesn't exist yet → create it silently.
-      if (!sheetId && state.isAdmin) {
-        sheetId = await Sheets.createSheet({ forEmail: email });
-        Auth.cacheSheetId(sheetId);
-      }
-
-      // Regular user with no sheet → admin hasn't provisioned them yet.
+      const sheetId = await resolveSheetId(email);
       if (!sheetId) {
         showScreen('no-sheet');
         return;
@@ -92,6 +92,51 @@
     }
   }
 
+  // Find the user's sheet, potentially showing Picker for a friend's first visit.
+  // Order:
+  //   1. localStorage (fastest, persists across sessions on this device).
+  //   2. Drive list via drive.file scope — works for admin always, and for
+  //      friends on return visits after they've used Picker once.
+  //   3. If admin and still no sheet → auto-create (their own notebook).
+  //   4. If friend and we have a pending invite link → show Picker.
+  //   5. Otherwise → friend needs an invite link from admin.
+  async function resolveSheetId(email) {
+    const ownName = `${window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker'} - ${email}`;
+
+    // 1. Cached on this device.
+    const cached = Auth.getSavedSheetId();
+    if (cached) return cached;
+
+    // 2. Drive list restricted to drive.file-visible files.
+    let files = [];
+    try { files = await Auth.listAppSheets(); } catch (e) { console.warn(e); }
+    const own = files.find((f) => f.name === ownName);
+    if (own) { Auth.saveSheetId(own.id); return own.id; }
+
+    // 3. Admin's first sign-in — nothing to pick, create it.
+    if (state.isAdmin) {
+      const id = await Sheets.createSheet({ forEmail: email });
+      Auth.saveSheetId(id);
+      return id;
+    }
+
+    // 4. Friend with a fresh invite link → confirm via Picker.
+    const invite = sessionStorage.getItem('pins_pending_invite');
+    if (invite) {
+      try {
+        const id = await Picker.pickSheet({ title: 'Tap your Pins notebook to connect' });
+        sessionStorage.removeItem('pins_pending_invite');
+        Auth.saveSheetId(id);
+        return id;
+      } catch (e) {
+        console.warn('Picker cancelled:', e);
+      }
+    }
+
+    // 5. Out of options — friend needs admin to send them an invite link.
+    return null;
+  }
+
   function setSigninBusy(busy) {
     const btn = U.qs('#btn-signin');
     if (!btn) return;
@@ -118,10 +163,14 @@
       catch (e) { console.error(e); U.toast('Sign-in failed. Try again.'); }
     });
     U.qs('#btn-retry').addEventListener('click', async () => {
-      sessionStorage.removeItem('pins_sheet_id');
+      Auth.clearSavedSheetId();
       await enterApp();
     });
-    U.qs('#btn-signout').addEventListener('click', () => { Auth.signOut(); showScreen('signin'); });
+    U.qs('#btn-signout').addEventListener('click', () => {
+      Auth.signOut();
+      Auth.clearSavedSheetId();
+      showScreen('signin');
+    });
 
     // Tab bar
     U.qsa('#tab-bar .tab').forEach((btn) => {
@@ -174,6 +223,16 @@
     U.qs('#btn-admin-add').addEventListener('click', adminAddUser);
     U.qs('#admin-email').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); adminAddUser(); }
+    });
+    U.qs('#btn-copy-invite').addEventListener('click', async () => {
+      const url = U.qs('#admin-last-invite-url').value;
+      if (!url) return;
+      try {
+        await navigator.clipboard.writeText(url);
+        U.toast('Copied');
+      } catch (_) {
+        U.qs('#admin-last-invite-url').select();
+      }
     });
 
     // Nearby settings
@@ -705,13 +764,76 @@
   // ------------------------------------------------------------------
   // Admin panel
   // ------------------------------------------------------------------
-  function openAdminPanel() {
+  function inviteUrlFor(sheetId) {
+    const base = location.origin + location.pathname;
+    return `${base}?invite=${encodeURIComponent(sheetId)}`;
+  }
+
+  function emailFromSheetName(name) {
+    const prefix = (window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker') + ' - ';
+    return name.startsWith(prefix) ? name.slice(prefix.length) : name;
+  }
+
+  async function openAdminPanel() {
     const prefix = (window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker');
     U.qs('#admin-own-name').textContent = `${prefix} - ${state.userEmail}`;
     U.qs('#admin-own-link').href = `https://docs.google.com/spreadsheets/d/${state.sheetId}/edit`;
     U.qs('#admin-email').value = '';
     U.qs('#admin-status').textContent = '';
+    U.qs('#admin-last-invite').classList.add('hidden');
     openSheet('#admin-sheet');
+    await renderFriendList();
+  }
+
+  async function renderFriendList() {
+    const list = U.qs('#admin-friends');
+    list.innerHTML = '<div class="muted small">Loading…</div>';
+    try {
+      const files = await Auth.listAppSheets();
+      const friends = files
+        .map((f) => ({ id: f.id, email: emailFromSheetName(f.name) }))
+        .filter((f) => f.email && f.email !== state.userEmail);
+      list.innerHTML = '';
+      if (!friends.length) {
+        list.innerHTML = '<div class="muted small">No friends added yet.</div>';
+        return;
+      }
+      friends.forEach((f) => list.appendChild(friendRow(f)));
+    } catch (e) {
+      console.error(e);
+      list.innerHTML = '<div class="muted small">Could not load friend list.</div>';
+    }
+  }
+
+  function friendRow(f) {
+    const row = document.createElement('div');
+    row.className = 'friend-row';
+    row.innerHTML = `
+      <div class="friend-email">${U.escapeHtml(f.email)}</div>
+      <button class="btn-ghost" data-copy>
+        <i class="ph ph-link-simple"></i> Copy invite
+      </button>
+    `;
+    row.querySelector('[data-copy]').addEventListener('click', async () => {
+      await copyInvite(f.id);
+    });
+    return row;
+  }
+
+  async function copyInvite(sheetId) {
+    const url = inviteUrlFor(sheetId);
+    try {
+      await navigator.clipboard.writeText(url);
+      U.toast('Invite link copied');
+    } catch (e) {
+      showInvitePreview(url);
+    }
+  }
+
+  function showInvitePreview(url) {
+    const box = U.qs('#admin-last-invite');
+    U.qs('#admin-last-invite-url').value = url;
+    box.classList.remove('hidden');
   }
 
   async function adminAddUser() {
@@ -731,10 +853,18 @@
     btn.innerHTML = '<span class="spinner"></span> Creating…';
     status.textContent = '';
     try {
-      await Sheets.createSheet({ forEmail: email, shareWith: email });
+      const sheetId = await Sheets.createSheet({ forEmail: email, shareWith: email });
       input.value = '';
       status.innerHTML = `<i class="ph ph-check-circle"></i> Created and shared with ${U.escapeHtml(email)}.`;
-      U.toast('User added');
+      const url = inviteUrlFor(sheetId);
+      try {
+        await navigator.clipboard.writeText(url);
+        U.toast('User added — invite link copied');
+      } catch (_) {
+        U.toast('User added');
+      }
+      showInvitePreview(url);
+      await renderFriendList();
     } catch (e) {
       console.error(e);
       status.textContent = 'Could not create the sheet. Try again.';

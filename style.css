@@ -314,6 +314,31 @@ a { color: var(--accent); text-decoration: none; }
 .admin-own .btn-ghost { padding: 6px 10px; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
 .admin-own .btn-ghost i { font-size: 16px; }
 
+.invite-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 12px; display: flex;
+  flex-direction: column; gap: 6px; margin-top: 6px;
+}
+.invite-row { display: flex; gap: 6px; align-items: center; }
+.invite-row input {
+  flex: 1; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.friend-list { display: flex; flex-direction: column; gap: 6px; }
+.friend-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 14px;
+}
+.friend-email { font-size: 14px; color: var(--text); word-break: break-all; }
+.friend-row .btn-ghost {
+  padding: 6px 10px; font-size: 13px; display: inline-flex; align-items: center; gap: 4px;
+  color: var(--accent); white-space: nowrap;
+}
+.friend-row .btn-ghost i { font-size: 14px; }
+
 /* ========== TOAST ========== */
 
 .toast {

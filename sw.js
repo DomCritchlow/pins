@@ -1,5 +1,5 @@
 // Pins service worker — bumps CACHE_NAME on every deploy so old shells get evicted.
-const CACHE_NAME = 'pins-shell-v1';
+const CACHE_NAME = 'pins-shell-v2';
 
 const SHELL = [
   './',
@@ -11,6 +11,7 @@ const SHELL = [
   './sheets.js',
   './places.js',
   './maps.js',
+  './picker.js',
   './app.js',
   './manifest.json',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
@@ -35,13 +36,16 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  // Never cache API calls.
+  // Never cache API calls or Google's auth/Picker/gapi assets.
   if (
     url.hostname === 'sheets.googleapis.com' ||
     url.hostname === 'www.googleapis.com' ||
     url.hostname === 'maps.googleapis.com' ||
     url.hostname === 'places.googleapis.com' ||
-    url.hostname === 'accounts.google.com'
+    url.hostname === 'openidconnect.googleapis.com' ||
+    url.hostname === 'accounts.google.com' ||
+    url.hostname === 'apis.google.com' ||
+    url.hostname === 'docs.google.com'
   ) {
     return;
   }
