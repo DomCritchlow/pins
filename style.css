@@ -305,6 +305,15 @@ a { color: var(--accent); text-decoration: none; }
 .detail-admin button { color: var(--muted); font-size: 14px; padding: 8px; }
 .detail-admin button.danger { color: #B8553A; }
 
+/* ========== ADMIN PANEL ========== */
+.admin-own {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 14px;
+}
+.admin-own .btn-ghost { padding: 6px 10px; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
+.admin-own .btn-ghost i { font-size: 16px; }
+
 /* ========== TOAST ========== */
 
 .toast {

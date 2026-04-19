@@ -3,6 +3,8 @@
   const state = {
     places: [],
     sheetId: null,
+    userEmail: '',
+    isAdmin: false,
     filters: { tags: [], visited: 'all', neighborhoods: [], cities: [], search: '' },
     sort: 'newest',
     view: 'list',
@@ -46,18 +48,35 @@
   }
 
   async function enterApp() {
+    setSigninBusy(true);
     try {
-      const sheetId = await Auth.resolveSheet();
+      const email = await Auth.getUserEmail();
+      state.userEmail = email;
+      state.isAdmin = Auth.isAdmin(email);
+
+      let sheetId = await Auth.resolveSheetForEmail(email);
+
+      // Admin's own sheet doesn't exist yet → create it silently.
+      if (!sheetId && state.isAdmin) {
+        sheetId = await Sheets.createSheet({ forEmail: email });
+        Auth.cacheSheetId(sheetId);
+      }
+
+      // Regular user with no sheet → admin hasn't provisioned them yet.
       if (!sheetId) {
         showScreen('no-sheet');
         return;
       }
+
       state.sheetId = sheetId;
       showScreen('main');
+      U.qs('#btn-admin').classList.toggle('hidden', !state.isAdmin);
+
       const places = await Sheets.listPlaces(sheetId);
       state.places = places;
       tryGetLocation();
       render();
+
       // If the user entered via a shared URL, open the prefilled form.
       const pending = sessionStorage.getItem('pins_pending_share');
       if (pending) {
@@ -68,7 +87,18 @@
     } catch (e) {
       console.error(e);
       U.toast('Could not load your places. Try refreshing.');
+    } finally {
+      setSigninBusy(false);
     }
+  }
+
+  function setSigninBusy(busy) {
+    const btn = U.qs('#btn-signin');
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.innerHTML = busy
+      ? '<span class="spinner"></span> Setting up…'
+      : '<i class="ph ph-google-logo"></i> Sign in with Google';
   }
 
   async function tryGetLocation() {
@@ -138,6 +168,13 @@
 
     // Form wiring
     wireForm();
+
+    // Admin panel
+    U.qs('#btn-admin').addEventListener('click', openAdminPanel);
+    U.qs('#btn-admin-add').addEventListener('click', adminAddUser);
+    U.qs('#admin-email').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); adminAddUser(); }
+    });
 
     // Nearby settings
     U.qs('#btn-nearby-settings').addEventListener('click', () => openSheet('#nearby-sheet'));
@@ -663,6 +700,48 @@
     if (v === '' || v == null) return null;
     const n = Number(v);
     return isNaN(n) ? null : n;
+  }
+
+  // ------------------------------------------------------------------
+  // Admin panel
+  // ------------------------------------------------------------------
+  function openAdminPanel() {
+    const prefix = (window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker');
+    U.qs('#admin-own-name').textContent = `${prefix} - ${state.userEmail}`;
+    U.qs('#admin-own-link').href = `https://docs.google.com/spreadsheets/d/${state.sheetId}/edit`;
+    U.qs('#admin-email').value = '';
+    U.qs('#admin-status').textContent = '';
+    openSheet('#admin-sheet');
+  }
+
+  async function adminAddUser() {
+    const input = U.qs('#admin-email');
+    const status = U.qs('#admin-status');
+    const btn = U.qs('#btn-admin-add');
+    const email = (input.value || '').trim().toLowerCase();
+    if (!email || !/.+@.+\..+/.test(email)) {
+      status.textContent = 'Enter a valid email.';
+      return;
+    }
+    if (email === state.userEmail) {
+      status.textContent = "That's you — your sheet already exists.";
+      return;
+    }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Creating…';
+    status.textContent = '';
+    try {
+      await Sheets.createSheet({ forEmail: email, shareWith: email });
+      input.value = '';
+      status.innerHTML = `<i class="ph ph-check-circle"></i> Created and shared with ${U.escapeHtml(email)}.`;
+      U.toast('User added');
+    } catch (e) {
+      console.error(e);
+      status.textContent = 'Could not create the sheet. Try again.';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ph ph-plus"></i> Create & share';
+    }
   }
 
   // ------------------------------------------------------------------

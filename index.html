@@ -56,6 +56,7 @@
             <input id="search" type="search" placeholder="Search" autocomplete="off">
           </div>
           <button id="btn-filter" class="icon-btn" aria-label="Filters"><i class="ph ph-funnel"></i></button>
+          <button id="btn-admin" class="icon-btn hidden" aria-label="Admin"><i class="ph ph-shield-star"></i></button>
         </div>
         <div id="active-filters"></div>
       </header>
@@ -204,6 +205,39 @@
         <div class="sheet-footer">
           <button id="btn-form-cancel" class="btn btn-ghost">Cancel</button>
           <button id="btn-form-save" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin panel -->
+    <div id="admin-sheet" class="sheet hidden">
+      <div class="sheet-inner">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <h2 class="display">Admin</h2>
+          <button class="icon-btn sheet-close" aria-label="Close"><i class="ph ph-x"></i></button>
+        </div>
+        <div class="sheet-body">
+          <div class="field">
+            <label>Your notebook</label>
+            <div class="admin-own">
+              <span id="admin-own-name" class="muted small"></span>
+              <a id="admin-own-link" href="#" target="_blank" rel="noopener" class="btn-ghost">
+                <i class="ph ph-arrow-square-out"></i> Open in Sheets
+              </a>
+            </div>
+          </div>
+          <div class="field">
+            <label for="admin-email">Add a friend</label>
+            <p class="muted small">Creates a new notebook in your Drive and shares it with their Google account. They just sign in to see it.</p>
+            <input id="admin-email" type="email" placeholder="friend@example.com" autocomplete="off" inputmode="email">
+            <div id="admin-status" class="muted small"></div>
+          </div>
+        </div>
+        <div class="sheet-footer">
+          <button id="btn-admin-add" class="btn btn-primary">
+            <i class="ph ph-plus"></i> Create & share
+          </button>
         </div>
       </div>
     </div>

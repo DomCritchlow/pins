@@ -91,24 +91,37 @@ One sheet named `places`. Row 1 is the header, data starts at row 2. Columns in 
 
 ---
 
-## Auth & sheet resolution
+## Auth, sheet resolution, and provisioning
 
-**User-facing flow**:
-1. App loads → immediately shows "Sign in with Google" (no intro screen).
-2. GIS token client requests scopes:
-   - `https://www.googleapis.com/auth/spreadsheets`
-   - `https://www.googleapis.com/auth/drive.metadata.readonly`
-3. Token stored in `sessionStorage`.
-4. App calls Drive API `files.list` with:
-   ```
-   q=name contains 'PlaceTracker' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false
-   ```
-   (This returns sheets the user owns OR that are shared with them — admin-owned + shared-with-user satisfies this.)
-5. If exactly 1 match → cache sheet ID in `sessionStorage`, load data.
-6. If 0 → show "Your sheet isn't set up yet — ask Dominic" screen with a refresh button.
-7. If >1 → pick most recently modified.
+**Scopes** requested on sign-in:
+- `https://www.googleapis.com/auth/spreadsheets` — read/write sheet data
+- `https://www.googleapis.com/auth/drive.file` — create sheets and manage permissions on sheets this app created (admin path only)
+- `https://www.googleapis.com/auth/drive.metadata.readonly` — find sheets shared with us (regular user path)
+- `openid`, `email` — identify the signed-in user so we can name their sheet and detect admin
 
-Token expires after 1 hour. On expiry, GIS re-requests silently (no popup unless consent has been revoked).
+**Naming convention**: every user's sheet is named exactly `PlaceTracker - <their email>`. Exact-name lookup, no ambiguity.
+
+**Admin detection**: `config.ADMIN_CONTACT` holds the admin's email. If the signed-in user matches, `state.isAdmin = true`.
+
+**User-facing flow on sign-in**:
+
+1. App loads → shows "Sign in with Google".
+2. After consent, app fetches the user's email via OIDC `userinfo`.
+3. App calls Drive `files.list` with `q=name='PlaceTracker - <email>'`.
+4. **If found** → cache ID, load data.
+5. **If not found and user is admin** → app creates a sheet in admin's own Drive titled `PlaceTracker - <admin email>`, writes the header row, no sharing needed. Admin continues to the main app.
+6. **If not found and user is not admin** → show "Your sheet isn't set up yet — ask Dominic" screen with a refresh button. Admin must provision the user via the in-app Admin panel.
+
+**Admin panel** (visible only when `state.isAdmin`):
+- A shield-star icon in the header opens a slide-up sheet.
+- Shows admin's own notebook with a link to open it in Google Sheets.
+- "Add a friend" input + button → calls `Sheets.createSheet({ forEmail, shareWith: forEmail })`:
+  - Creates sheet in admin's Drive named `PlaceTracker - <friend email>`.
+  - Writes header row.
+  - Grants friend editor access via Drive `permissions.create` (no notification email — admin tells them out-of-band).
+- Friend then signs in and their Drive lookup finds the shared sheet.
+
+Token expires after 1 hour. GIS re-requests silently on expiry.
 
 ---
 
@@ -254,23 +267,26 @@ Phosphor via CDN. Use `ph` (regular) and `ph-fill` (filled) on `<span>` tags.
 See [README.md](README.md). Short version:
 
 1. Create GCP project.
-2. Enable: Sheets API, Drive API, **Places API (New)** (not the legacy "Places API" — the New one supports browser CORS and is what new GCP projects can enable).
+2. Enable: Sheets API, Drive API, **Places API (New)**.
 3. Create OAuth 2.0 Client ID (Web App) — add GitHub Pages URL as authorized JS origin.
-4. Create an API Key — restrict to HTTP referrer of the GitHub Pages URL + to Places API only.
-5. Drop both into [config.js](config.js).
-6. Push to a GitHub repo named `pins`. Enable Pages serving from `main` root.
-7. Create a template sheet with the header row. Save as "PlaceTracker - Template".
+4. Create an API Key — restrict to HTTP referrer of the GitHub Pages URL + to Places API (New) only. Set a daily quota cap.
+5. Put credentials in `.env` (local) or repo Secrets (CI). `config.js` is generated from them.
+6. Push to `main`. GitHub Actions deploys to Pages.
+7. Open the deployed app and sign in with your admin email. The app auto-creates your sheet in your own Drive.
+
+No template sheet needed — the app creates the schema programmatically.
 
 ---
 
-## Onboarding a new user (admin action, per user)
+## Onboarding a new user
 
-1. Duplicate the template sheet in your Drive.
-2. Rename to `PlaceTracker - <user first name>`.
-3. Share with the user's Google email (editor).
-4. Send them the app URL.
+1. Admin opens Pins and taps the shield-star icon in the header.
+2. Admin types the friend's Google email and taps "Create & share".
+3. App creates `PlaceTracker - <friend email>` in admin's Drive, writes the header, grants the friend editor access.
+4. Admin sends the friend the app URL.
+5. Friend signs in → Drive lookup finds the shared sheet → data loads (empty to start).
 
-That's it. They sign in, the Drive lookup finds their sheet, data loads.
+Zero manual spreadsheet work. Admin retains ownership of every sheet in their own Drive.
 
 ---
 

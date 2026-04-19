@@ -24,8 +24,10 @@ Do this once. Users never need to touch any of it.
 2. User type: **External**. Publishing status can stay "Testing" while your group is small — just add each user's Google email under **Test users**.
 3. App name: `Pins`. User support email: yours.
 4. Scopes to declare:
-   - `.../auth/spreadsheets`
-   - `.../auth/drive.metadata.readonly`
+   - `.../auth/spreadsheets` — read/write the user's sheet
+   - `.../auth/drive.file` — create new sheets and grant access (admin only uses this, but it's requested for all sign-ins so incremental auth isn't needed)
+   - `.../auth/drive.metadata.readonly` — find the sheet shared with each user
+   - `openid`, `email` — identify the signed-in user (used for naming their sheet and detecting admin)
 
 ### 3. OAuth Client ID
 
@@ -44,18 +46,7 @@ Do this once. Users never need to touch any of it.
 4. **Cap the quota.** In **APIs & Services → Quotas & System Limits**, filter to Places API (New) and set a low daily cap on request-per-day metrics (500/day is plenty for 5 users). This is the primary guardrail: if the key is ever misused, you hit the cap and the app stops working for a day — you never get surprise-billed.
 5. **Set a billing alert.** In **Billing → Budgets & alerts**, create a budget of $5/month with an email alert at 50% and 100%. Belt-and-suspenders alongside the quota cap.
 
-### 5. Template sheet
-
-1. Create a new Google Sheet. Rename the first tab to `places` (exactly that, lowercase).
-2. Paste this header row into row 1 (tab-separated):
-
-   ```
-   id	name	address	city	state	country	neighborhood	lat	lng	tags	notes	visited	visited_date	source_url	place_id	photo_reference	price_tier	added_date	custom
-   ```
-
-3. Save. Name the file **`PlaceTracker - Template`** so you can duplicate it for each user.
-
-### 6. Deploy (keys live in repo Secrets, never in git)
+### 5. Deploy (keys live in repo Secrets, never in git)
 
 1. Create a repo named `pins` on GitHub and push this folder to `main`.
 2. In the repo → **Settings → Pages** → set **Source** to **GitHub Actions**.
@@ -63,7 +54,7 @@ Do this once. Users never need to touch any of it.
    - `PINS_CLIENT_ID` — the OAuth Client ID from step 3.
    - `PINS_API_KEY` — the API key from step 4.
    - `PINS_SHEET_NAME_PREFIX` — optional, defaults to `PlaceTracker`.
-   - `PINS_ADMIN_CONTACT` — optional, shown on the "your sheet isn't set up yet" screen.
+   - `PINS_ADMIN_CONTACT` — **required** — your Google email. Used to (a) detect the admin user when you sign in and show the Admin panel, (b) shown to non-admins on the "your sheet isn't set up yet" screen so they know who to ask.
 4. Push to `main` (or hit **Run workflow** on the Deploy action). The workflow in `.github/workflows/deploy.yml` reads the secrets, generates `config.js` in CI, and deploys the site to Pages.
 5. Within ~1 minute the app is live at `https://<your-username>.github.io/pins/`.
 
@@ -73,14 +64,19 @@ The built `config.js` only exists in the Pages deployment artifact, not in the r
 
 ## Onboarding a user
 
-For each new user (including yourself):
+No spreadsheet busywork — everything happens in the app.
 
-1. In Drive, **Make a copy** of `PlaceTracker - Template`.
-2. Rename the copy to `PlaceTracker - <their first name>` (the name just needs to start with `PlaceTracker`).
-3. Click **Share** → add their Google email with **Editor** access. Uncheck "Notify people" if you don't want the email.
-4. Send them the app URL. They tap "Sign in with Google", grant access, and their places load.
+**First admin login**: open the deployed app, sign in with your admin Google account (the one you put in `PINS_ADMIN_CONTACT`). The app notices you're the admin and auto-creates `PlaceTracker - <your email>` in your Drive. You're in.
 
-If they sign in and see the "Almost there" screen, you forgot step 3.
+**Add a friend**:
+
+1. Tap the **shield-star** icon in the header.
+2. Type their Google email → tap **Create & share**.
+3. Send them the app URL.
+
+What the app does behind the scenes: creates `PlaceTracker - <friend email>` in *your* Drive, writes the schema header row, grants the friend editor access via Drive permissions.
+
+When the friend signs in, the app's Drive lookup finds the sheet shared with them and loads it. If they see the "Almost there" screen, you forgot step 2.
 
 ---
 

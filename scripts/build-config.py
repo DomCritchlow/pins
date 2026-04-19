@@ -43,7 +43,7 @@ def main() -> int:
             return 1
         src = parse_dotenv(env_path.read_text())
 
-    required = ["PINS_CLIENT_ID", "PINS_API_KEY"]
+    required = ["PINS_CLIENT_ID", "PINS_API_KEY", "PINS_ADMIN_CONTACT"]
     missing = [k for k in required if not src.get(k) or src[k].startswith("REPLACE_")]
     if missing:
         print(f"Missing or unfilled: {', '.join(missing)}", file=sys.stderr)

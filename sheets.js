@@ -137,5 +137,71 @@
     return true;
   }
 
-  window.Sheets = { listPlaces, appendPlace, updatePlace, deletePlace, rowToPlace, placeToRow };
+  const HEADER = [
+    'id', 'name', 'address', 'city', 'state', 'country', 'neighborhood',
+    'lat', 'lng', 'tags', 'notes', 'visited', 'visited_date', 'source_url',
+    'place_id', 'photo_reference', 'price_tier', 'added_date', 'custom',
+  ];
+
+  // Create a new sheet in the current user's Drive, write the header row,
+  // optionally share with another user email. Returns the new spreadsheetId.
+  async function createSheet({ forEmail, shareWith } = {}) {
+    const prefix = (window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker');
+    const title = `${prefix} - ${forEmail}`;
+    // 1. Create the spreadsheet with a "places" tab + frozen header.
+    const createRes = await Auth.authedFetch('https://sheets.googleapis.com/v4/spreadsheets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        properties: { title },
+        sheets: [
+          {
+            properties: {
+              title: 'places',
+              gridProperties: { frozenRowCount: 1, columnCount: HEADER.length },
+            },
+          },
+        ],
+      }),
+    });
+    if (!createRes.ok) throw new Error(`sheets create ${createRes.status}`);
+    const { spreadsheetId } = await createRes.json();
+
+    // 2. Write the header row.
+    const headerUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/places!A1:${String.fromCharCode(64 + HEADER.length)}1?valueInputOption=RAW`;
+    const headerRes = await Auth.authedFetch(headerUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: [HEADER] }),
+    });
+    if (!headerRes.ok) throw new Error(`sheets header ${headerRes.status}`);
+
+    // 3. Share with the target user, if one was specified. The caller only
+    // passes shareWith when the creator and the sheet-owner differ (i.e. admin
+    // provisioning a sheet for a friend); otherwise the sheet stays private.
+    if (shareWith) {
+      const shareUrl = `https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions?sendNotificationEmail=false&supportsAllDrives=false`;
+      const shareRes = await Auth.authedFetch(shareUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: 'writer',
+          type: 'user',
+          emailAddress: shareWith,
+        }),
+      });
+      if (!shareRes.ok) {
+        // Don't throw — sheet exists, caller can retry share later.
+        console.warn(`Could not share sheet with ${shareWith}: ${shareRes.status}`);
+      }
+    }
+
+    return spreadsheetId;
+  }
+
+  window.Sheets = {
+    listPlaces, appendPlace, updatePlace, deletePlace,
+    createSheet, rowToPlace, placeToRow,
+    HEADER,
+  };
 })();

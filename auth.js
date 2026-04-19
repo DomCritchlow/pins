@@ -1,8 +1,11 @@
-// Google Identity Services (GIS) token flow + Drive sheet resolution.
+// Google Identity Services (GIS) token flow + Drive sheet resolution + userinfo.
 (function () {
   const SCOPES = [
     'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive.metadata.readonly',
+    'https://www.googleapis.com/auth/drive.file',           // create + manage permissions on sheets we own
+    'https://www.googleapis.com/auth/drive.metadata.readonly', // find sheets shared with us
+    'openid',
+    'email',
   ].join(' ');
 
   const TOKEN_KEY = 'pins_token';
@@ -34,7 +37,7 @@
       client_id: window.CONFIG.CLIENT_ID,
       scope: SCOPES,
       prompt: '',
-      callback: () => {}, // overridden per-request
+      callback: () => {},
     });
     return tokenClient;
   }
@@ -67,27 +70,46 @@
     sessionStorage.removeItem(EMAIL_KEY);
   }
 
-  // Drive: find the sheet whose name contains the configured prefix.
-  async function resolveSheet() {
+  async function getUserEmail() {
+    const cached = sessionStorage.getItem(EMAIL_KEY);
+    if (cached) return cached;
+    const res = await authedFetch('https://openidconnect.googleapis.com/v1/userinfo');
+    if (!res.ok) throw new Error(`userinfo ${res.status}`);
+    const body = await res.json();
+    const email = (body.email || '').toLowerCase();
+    if (email) sessionStorage.setItem(EMAIL_KEY, email);
+    return email;
+  }
+
+  // Look up the sheet named exactly "<prefix> - <email>". Works for both owned
+  // and shared sheets (drive.metadata.readonly returns both).
+  async function resolveSheetForEmail(email) {
     const cached = sessionStorage.getItem(SHEET_KEY);
     if (cached) return cached;
-    const token = getToken();
-    if (!token) throw new Error('no-token');
-    const prefix = (window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker').replace(/'/g, "\\'");
-    const q = `name contains '${prefix}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
+    const prefix = (window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker');
+    const name = `${prefix} - ${email}`.replace(/'/g, "\\'");
+    const q = `name='${name}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
     const url =
       'https://www.googleapis.com/drive/v3/files?fields=' +
       encodeURIComponent('files(id,name,modifiedTime,owners(emailAddress))') +
-      '&pageSize=10&orderBy=modifiedTime desc&q=' +
+      '&pageSize=5&orderBy=modifiedTime desc&q=' +
       encodeURIComponent(q);
-    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+    const res = await authedFetch(url);
     if (!res.ok) throw new Error(`drive ${res.status}`);
     const body = await res.json();
     const files = body.files || [];
     if (!files.length) return null;
-    const pick = files[0];
-    sessionStorage.setItem(SHEET_KEY, pick.id);
-    return pick.id;
+    sessionStorage.setItem(SHEET_KEY, files[0].id);
+    return files[0].id;
+  }
+
+  function cacheSheetId(id) {
+    sessionStorage.setItem(SHEET_KEY, id);
+  }
+
+  function isAdmin(email) {
+    const admin = (window.CONFIG.ADMIN_CONTACT || '').toLowerCase();
+    return !!admin && email && email.toLowerCase() === admin;
   }
 
   async function authedFetch(url, opts = {}) {
@@ -109,5 +131,8 @@
     return res;
   }
 
-  window.Auth = { signIn, signOut, getToken, resolveSheet, authedFetch };
+  window.Auth = {
+    signIn, signOut, getToken, getUserEmail,
+    resolveSheetForEmail, cacheSheetId, isAdmin, authedFetch,
+  };
 })();
