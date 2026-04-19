@@ -1,0 +1,6 @@
+# Local config — generated from .env, never committed.
+config.js
+.env
+
+# macOS cruft
+.DS_Store

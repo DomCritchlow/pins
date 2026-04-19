@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#F5F1EC" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1A1917" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Pins">
+  <title>Pins</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" rel="stylesheet">
+  <link href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css" rel="stylesheet">
+  <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <!-- 1. Sign-in -->
+    <section id="view-signin" class="screen">
+      <div class="card-center">
+        <div class="brand">
+          <i class="ph-fill ph-map-pin-area"></i>
+          <h1 class="display">Pins</h1>
+        </div>
+        <p class="muted">Your places, sorted.</p>
+        <button id="btn-signin" class="btn btn-primary">
+          <i class="ph ph-google-logo"></i> Sign in with Google
+        </button>
+      </div>
+    </section>
+
+    <!-- 2. No sheet provisioned -->
+    <section id="view-no-sheet" class="screen hidden">
+      <div class="card-center">
+        <i class="ph ph-envelope-open icon-xl"></i>
+        <h1 class="display">Almost there</h1>
+        <p class="muted">Your Pins notebook hasn't been set up yet. Ask <span id="admin-contact"></span> to share one with the Google account you just signed in with.</p>
+        <button id="btn-retry" class="btn btn-primary">Check again</button>
+        <button id="btn-signout" class="btn-ghost">Sign out</button>
+      </div>
+    </section>
+
+    <!-- 3. Main app -->
+    <main id="view-main" class="hidden">
+      <header id="app-header">
+        <div id="filter-bar">
+          <div id="search-wrap">
+            <i class="ph ph-magnifying-glass"></i>
+            <input id="search" type="search" placeholder="Search" autocomplete="off">
+          </div>
+          <button id="btn-filter" class="icon-btn" aria-label="Filters"><i class="ph ph-funnel"></i></button>
+        </div>
+        <div id="active-filters"></div>
+      </header>
+
+      <section id="pane-list" class="pane">
+        <div id="list-sort">
+          <button class="sort-btn" data-sort="newest">Newest</button>
+          <button class="sort-btn" data-sort="nearest">Nearest</button>
+          <button class="sort-btn" data-sort="alpha">A–Z</button>
+        </div>
+        <div id="list-container"></div>
+        <div id="list-empty" class="empty hidden">
+          <i class="ph ph-map-pin-line icon-xl"></i>
+          <h2 class="display">No places yet</h2>
+          <p class="muted">Tap + to add your first pin, or share a link to this app from anywhere on your phone.</p>
+        </div>
+      </section>
+
+      <section id="pane-map" class="pane hidden">
+        <div id="map"></div>
+      </section>
+
+      <section id="pane-nearby" class="pane hidden">
+        <div id="nearby-header">
+          <div>
+            <h2 class="display" id="nearby-title">Nearby</h2>
+            <p class="muted small" id="nearby-sub"></p>
+          </div>
+          <button class="icon-btn" id="btn-nearby-settings" aria-label="Nearby settings"><i class="ph ph-sliders-horizontal"></i></button>
+        </div>
+        <div id="nearby-container"></div>
+      </section>
+
+      <nav id="tab-bar">
+        <button class="tab active" data-tab="list"><i class="ph ph-list-bullets"></i><span>List</span></button>
+        <button class="tab" data-tab="map"><i class="ph ph-map-trifold"></i><span>Map</span></button>
+        <button class="tab" data-tab="nearby"><i class="ph ph-navigation-arrow"></i><span>Nearby</span></button>
+        <button class="tab" data-tab="add"><i class="ph-fill ph-plus-circle"></i><span>Add</span></button>
+      </nav>
+    </main>
+
+    <!-- Filter drawer -->
+    <div id="filter-drawer" class="sheet hidden">
+      <div class="sheet-inner">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <h2 class="display">Filter</h2>
+          <button class="icon-btn sheet-close" aria-label="Close"><i class="ph ph-x"></i></button>
+        </div>
+        <div class="sheet-body">
+          <div class="field">
+            <label>Visited</label>
+            <div class="seg">
+              <button class="seg-btn" data-visited="all">All</button>
+              <button class="seg-btn" data-visited="no">Not yet</button>
+              <button class="seg-btn" data-visited="yes">Visited</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Tags</label>
+            <div id="filter-tags" class="pill-wrap"></div>
+          </div>
+          <div class="field">
+            <label>Neighborhood</label>
+            <div id="filter-neighborhoods" class="pill-wrap"></div>
+          </div>
+          <div class="field">
+            <label>City</label>
+            <div id="filter-cities" class="pill-wrap"></div>
+          </div>
+        </div>
+        <div class="sheet-footer">
+          <button id="btn-filter-clear" class="btn btn-ghost">Clear</button>
+          <button id="btn-filter-apply" class="btn btn-primary">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail sheet -->
+    <div id="detail-sheet" class="sheet hidden">
+      <div class="sheet-inner" id="detail-inner"></div>
+    </div>
+
+    <!-- Add / edit form sheet -->
+    <div id="form-sheet" class="sheet hidden">
+      <div class="sheet-inner">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <h2 class="display" id="form-title">Add a place</h2>
+          <button class="icon-btn sheet-close" aria-label="Close"><i class="ph ph-x"></i></button>
+        </div>
+        <form id="place-form" class="sheet-body" autocomplete="off">
+          <div class="field">
+            <label for="f-search">Search Google</label>
+            <div class="search-wrap">
+              <i class="ph ph-magnifying-glass"></i>
+              <input id="f-search" type="text" placeholder="Type a place name…">
+            </div>
+            <div id="f-autocomplete" class="autocomplete hidden"></div>
+          </div>
+          <div class="field">
+            <label for="f-name">Name</label>
+            <input id="f-name" type="text" required>
+          </div>
+          <div class="field">
+            <label for="f-tags">Tags</label>
+            <div class="tag-input" id="f-tags-wrap">
+              <div id="f-tag-pills" class="pill-wrap-inline"></div>
+              <input id="f-tags" type="text" placeholder="Add tag…">
+            </div>
+            <div id="f-tag-suggestions" class="autocomplete hidden"></div>
+          </div>
+          <div class="field">
+            <label for="f-notes">Notes</label>
+            <textarea id="f-notes" rows="3" placeholder="Anything you want to remember…"></textarea>
+          </div>
+          <div class="field">
+            <label for="f-neighborhood">Neighborhood</label>
+            <input id="f-neighborhood" type="text">
+          </div>
+          <div class="field">
+            <label for="f-address">Address</label>
+            <input id="f-address" type="text">
+          </div>
+          <div class="field">
+            <label for="f-source">Source URL</label>
+            <input id="f-source" type="url" placeholder="https://…">
+          </div>
+          <div class="field field-row">
+            <label class="check">
+              <input id="f-visited" type="checkbox">
+              <span>I've been here</span>
+            </label>
+            <input id="f-visited-date" type="date" class="hidden">
+          </div>
+          <input type="hidden" id="f-id">
+          <input type="hidden" id="f-lat">
+          <input type="hidden" id="f-lng">
+          <input type="hidden" id="f-city">
+          <input type="hidden" id="f-state">
+          <input type="hidden" id="f-country">
+          <input type="hidden" id="f-place-id">
+          <input type="hidden" id="f-photo-ref">
+          <input type="hidden" id="f-price-tier">
+        </form>
+        <div class="sheet-footer">
+          <button id="btn-form-cancel" class="btn btn-ghost">Cancel</button>
+          <button id="btn-form-save" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nearby settings sheet -->
+    <div id="nearby-sheet" class="sheet hidden">
+      <div class="sheet-inner">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <h2 class="display">Nearby settings</h2>
+          <button class="icon-btn sheet-close" aria-label="Close"><i class="ph ph-x"></i></button>
+        </div>
+        <div class="sheet-body">
+          <div class="field">
+            <label>Mode</label>
+            <div class="seg">
+              <button class="seg-btn" data-mode="smart">Smart</button>
+              <button class="seg-btn" data-mode="1">1 km</button>
+              <button class="seg-btn" data-mode="3">3 km</button>
+              <button class="seg-btn" data-mode="10">10 km</button>
+            </div>
+            <p class="muted small">Smart mode expands the radius until it finds at least 5 places.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <script src="util.js" defer></script>
+  <script src="auth.js" defer></script>
+  <script src="sheets.js" defer></script>
+  <script src="places.js" defer></script>
+  <script src="maps.js" defer></script>
+  <script src="app.js" defer></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
