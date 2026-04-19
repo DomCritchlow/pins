@@ -68,7 +68,7 @@
   U.parseTags = (s) => String(s || '').split(',').map((t) => t.trim()).filter(Boolean);
   U.joinTags = (arr) => (arr || []).map((t) => t.trim()).filter(Boolean).join(',');
 
-  U.parseBool = (s) => String(s || '').toUpperCase() === 'TRUE';
+  U.parseBool = (v) => v === true || String(v || '').toUpperCase() === 'TRUE';
   U.boolOut = (b) => (b ? 'TRUE' : 'FALSE');
 
   U.qs = (sel, root = document) => root.querySelector(sel);

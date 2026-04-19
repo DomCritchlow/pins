@@ -4,28 +4,47 @@
   const RANGE = 'places!A2:S';
   const WRITE_RANGE = 'places!A:S';
 
+  // Google Sheets with valueInputOption=USER_ENTERED auto-coerces ISO date
+  // strings into real date cells. UNFORMATTED_VALUE reads then return them as
+  // serial numbers (days since 1899-12-30). Normalize back to ISO yyyy-mm-dd
+  // strings so the rest of the app keeps working with strings everywhere.
+  function toIsoDateString(v) {
+    if (v == null || v === '') return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number' && isFinite(v)) {
+      const ms = (v - 25569) * 86400 * 1000;
+      const d = new Date(ms);
+      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    }
+    return String(v);
+  }
+
+  function toStr(v) {
+    return v == null ? '' : String(v);
+  }
+
   // Map row -> place object.
   function rowToPlace(row) {
     return {
-      id: row[0] || '',
-      name: row[1] || '',
-      address: row[2] || '',
-      city: row[3] || '',
-      state: row[4] || '',
-      country: row[5] || '',
-      neighborhood: row[6] || '',
-      lat: row[7] ? Number(row[7]) : null,
-      lng: row[8] ? Number(row[8]) : null,
+      id: toStr(row[0]),
+      name: toStr(row[1]),
+      address: toStr(row[2]),
+      city: toStr(row[3]),
+      state: toStr(row[4]),
+      country: toStr(row[5]),
+      neighborhood: toStr(row[6]),
+      lat: row[7] !== '' && row[7] != null ? Number(row[7]) : null,
+      lng: row[8] !== '' && row[8] != null ? Number(row[8]) : null,
       tags: U.parseTags(row[9]),
-      notes: row[10] || '',
+      notes: toStr(row[10]),
       visited: U.parseBool(row[11]),
-      visited_date: row[12] || '',
-      source_url: row[13] || '',
-      place_id: row[14] || '',
-      photo_reference: row[15] || '',
-      price_tier: row[16] ? Number(row[16]) : null,
-      added_date: row[17] || '',
-      custom: row[18] || '',
+      visited_date: toIsoDateString(row[12]),
+      source_url: toStr(row[13]),
+      place_id: toStr(row[14]),
+      photo_reference: toStr(row[15]),
+      price_tier: row[16] !== '' && row[16] != null ? Number(row[16]) : null,
+      added_date: toIsoDateString(row[17]),
+      custom: toStr(row[18]),
     };
   }
 
