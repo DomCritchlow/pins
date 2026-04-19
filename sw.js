@@ -1,5 +1,5 @@
 // Pins service worker — bumps CACHE_NAME on every deploy so old shells get evicted.
-const CACHE_NAME = 'pins-shell-v3';
+const CACHE_NAME = 'pins-shell-v4';
 
 const SHELL = [
   './',

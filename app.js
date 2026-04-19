@@ -70,9 +70,26 @@
 
       state.sheetId = sheetId;
       showScreen('main');
-      U.qs('#btn-admin').classList.toggle('hidden', !state.isAdmin);
+      U.qs('#settings-admin').classList.toggle('hidden', !state.isAdmin);
 
-      const places = await Sheets.listPlaces(sheetId);
+      let places;
+      try {
+        places = await Sheets.listPlaces(sheetId);
+      } catch (e) {
+        const msg = String((e && e.message) || '');
+        if (msg.includes('404') || msg.includes('403')) {
+          // Cached sheet id points to something we can no longer read — wipe
+          // and re-resolve (may re-create for admin or prompt Picker for a friend).
+          console.warn('Stale sheet cache, re-resolving…', e);
+          Auth.clearSavedSheetId(email);
+          const fresh = await resolveSheetId(email);
+          if (!fresh) { showScreen('no-sheet'); return; }
+          state.sheetId = fresh;
+          places = await Sheets.listPlaces(fresh);
+        } else {
+          throw e;
+        }
+      }
       state.places = places;
       tryGetLocation();
       render();
@@ -103,20 +120,20 @@
   async function resolveSheetId(email) {
     const ownName = `${window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker'} - ${email}`;
 
-    // 1. Cached on this device.
-    const cached = Auth.getSavedSheetId();
+    // 1. Cached on this device (keyed by email so account-switching is safe).
+    const cached = Auth.getSavedSheetId(email);
     if (cached) return cached;
 
     // 2. Drive list restricted to drive.file-visible files.
     let files = [];
     try { files = await Auth.listAppSheets(); } catch (e) { console.warn(e); }
     const own = files.find((f) => f.name === ownName);
-    if (own) { Auth.saveSheetId(own.id); return own.id; }
+    if (own) { Auth.saveSheetId(own.id, email); return own.id; }
 
     // 3. Admin's first sign-in — nothing to pick, create it.
     if (state.isAdmin) {
       const id = await Sheets.createSheet({ forEmail: email });
-      Auth.saveSheetId(id);
+      Auth.saveSheetId(id, email);
       return id;
     }
 
@@ -126,7 +143,7 @@
       try {
         const id = await Picker.pickSheet({ title: 'Tap your Pins notebook to connect' });
         sessionStorage.removeItem('pins_pending_invite');
-        Auth.saveSheetId(id);
+        Auth.saveSheetId(id, email);
         return id;
       } catch (e) {
         console.warn('Picker cancelled:', e);
@@ -237,6 +254,18 @@
       } catch (_) {
         U.qs('#admin-last-invite-url').select();
       }
+    });
+
+    // Sign out / reset local data (available to every user in Settings).
+    U.qs('#btn-settings-signout').addEventListener('click', () => {
+      Auth.signOut();
+      closeSheet('#admin-sheet');
+      showScreen('signin');
+    });
+    U.qs('#btn-settings-reset').addEventListener('click', () => {
+      if (!confirm('Reset app data on this device? You stay signed in via Google and your places are safe in your sheet.')) return;
+      Auth.clearAllLocalData();
+      location.reload();
     });
 
     // Nearby settings
@@ -930,11 +959,14 @@
     const prefix = (window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker');
     U.qs('#admin-own-name').textContent = `${prefix} - ${state.userEmail}`;
     U.qs('#admin-own-link').href = `https://docs.google.com/spreadsheets/d/${state.sheetId}/edit`;
-    U.qs('#admin-email').value = '';
-    U.qs('#admin-status').textContent = '';
-    U.qs('#admin-last-invite').classList.add('hidden');
+    U.qs('#settings-admin').classList.toggle('hidden', !state.isAdmin);
+    if (state.isAdmin) {
+      U.qs('#admin-email').value = '';
+      U.qs('#admin-status').textContent = '';
+      U.qs('#admin-last-invite').classList.add('hidden');
+    }
     openSheet('#admin-sheet');
-    await renderFriendList();
+    if (state.isAdmin) await renderFriendList();
   }
 
   async function renderFriendList() {
@@ -962,9 +994,14 @@
     row.className = 'friend-row';
     row.innerHTML = `
       <div class="friend-email">${U.escapeHtml(f.email)}</div>
-      <button class="btn-ghost" data-copy>
-        <i class="ph ph-link-simple"></i> Copy invite
-      </button>
+      <div class="friend-actions">
+        <button class="btn-ghost" data-copy title="Copy invite link">
+          <i class="ph ph-link-simple"></i> Invite
+        </button>
+        <a class="btn-ghost" href="https://docs.google.com/spreadsheets/d/${U.escapeHtml(f.id)}/edit" target="_blank" rel="noopener" title="Open their sheet">
+          <i class="ph ph-arrow-square-out"></i> Open
+        </a>
+      </div>
     `;
     row.querySelector('[data-copy]').addEventListener('click', async () => {
       await copyInvite(f.id);

@@ -390,11 +390,20 @@ a { color: var(--accent); text-decoration: none; }
   border-radius: var(--radius-sm); padding: 10px 14px;
 }
 .friend-email { font-size: 14px; color: var(--text); word-break: break-all; }
+.friend-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .friend-row .btn-ghost {
   padding: 6px 10px; font-size: 13px; display: inline-flex; align-items: center; gap: 4px;
   color: var(--accent); white-space: nowrap;
 }
 .friend-row .btn-ghost i { font-size: 14px; }
+
+/* Footer actions in Settings */
+.settings-danger {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.settings-danger .btn-ghost { padding: 10px 0; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; }
+.settings-danger .btn-ghost.danger { color: #B8553A; }
 
 /* ========== TOAST ========== */
 

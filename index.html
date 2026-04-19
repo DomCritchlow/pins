@@ -57,7 +57,7 @@
           </div>
           <button id="btn-filter" class="icon-btn" aria-label="Filters"><i class="ph ph-funnel"></i></button>
           <button id="btn-labels" class="icon-btn" aria-label="Customize labels"><i class="ph ph-palette"></i></button>
-          <button id="btn-admin" class="icon-btn hidden" aria-label="Admin"><i class="ph ph-shield-star"></i></button>
+          <button id="btn-admin" class="icon-btn" aria-label="Settings"><i class="ph ph-gear"></i></button>
         </div>
         <div id="active-filters"></div>
       </header>
@@ -229,12 +229,12 @@
       </div>
     </div>
 
-    <!-- Admin panel -->
+    <!-- Settings panel (everyone sees "Your notebook"; admin sees more) -->
     <div id="admin-sheet" class="sheet hidden">
       <div class="sheet-inner">
         <div class="sheet-handle"></div>
         <div class="sheet-header">
-          <h2 class="display">Admin</h2>
+          <h2 class="display">Settings</h2>
           <button class="icon-btn sheet-close" aria-label="Close"><i class="ph ph-x"></i></button>
         </div>
         <div class="sheet-body">
@@ -247,29 +247,37 @@
               </a>
             </div>
           </div>
-          <div class="field">
-            <label for="admin-email">Add a friend</label>
-            <p class="muted small">Creates a notebook in your Drive and shares it with their Google account. Copy the invite link that appears and send it to them.</p>
-            <input id="admin-email" type="email" placeholder="friend@example.com" autocomplete="off" inputmode="email">
-            <div id="admin-status" class="muted small"></div>
-            <div id="admin-last-invite" class="invite-box hidden">
-              <label class="muted small">Invite link</label>
-              <div class="invite-row">
-                <input id="admin-last-invite-url" type="text" readonly>
-                <button id="btn-copy-invite" class="icon-btn" aria-label="Copy"><i class="ph ph-copy"></i></button>
+
+          <div id="settings-admin" class="hidden">
+            <div class="field">
+              <label for="admin-email">Add a friend</label>
+              <p class="muted small">Creates a notebook in your Drive and shares it with their Google account. Copy the invite link that appears and send it to them.</p>
+              <input id="admin-email" type="email" placeholder="friend@example.com" autocomplete="off" inputmode="email">
+              <div id="admin-status" class="muted small"></div>
+              <div id="admin-last-invite" class="invite-box hidden">
+                <label class="muted small">Invite link</label>
+                <div class="invite-row">
+                  <input id="admin-last-invite-url" type="text" readonly>
+                  <button id="btn-copy-invite" class="icon-btn" aria-label="Copy"><i class="ph ph-copy"></i></button>
+                </div>
+                <p class="muted small">Send this to your friend. They'll open it, sign in, and confirm access to their notebook.</p>
               </div>
-              <p class="muted small">Send this to your friend. They'll open it, sign in, and confirm access to their notebook.</p>
+            </div>
+            <div class="field">
+              <label>Friends</label>
+              <div id="admin-friends" class="friend-list"></div>
+            </div>
+            <div class="field">
+              <button id="btn-admin-add" class="btn btn-primary">
+                <i class="ph ph-plus"></i> Create & share
+              </button>
             </div>
           </div>
-          <div class="field">
-            <label>Friends</label>
-            <div id="admin-friends" class="friend-list"></div>
+
+          <div class="field settings-danger">
+            <button id="btn-settings-signout" class="btn-ghost"><i class="ph ph-sign-out"></i> Sign out</button>
+            <button id="btn-settings-reset" class="btn-ghost danger"><i class="ph ph-arrow-counter-clockwise"></i> Reset app data on this device</button>
           </div>
-        </div>
-        <div class="sheet-footer">
-          <button id="btn-admin-add" class="btn btn-primary">
-            <i class="ph ph-plus"></i> Create & share
-          </button>
         </div>
       </div>
     </div>

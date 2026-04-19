@@ -86,16 +86,42 @@
     return email;
   }
 
-  function getSavedSheetId() {
+  // Sheet id cache is keyed by email so signing in with a different account
+  // on the same device doesn't inherit the previous user's sheet id.
+  function sheetKeyFor(email) {
+    return email ? `${SHEET_KEY}:${email.toLowerCase()}` : SHEET_KEY;
+  }
+
+  function getSavedSheetId(email) {
+    if (email) {
+      const byEmail = localStorage.getItem(sheetKeyFor(email));
+      if (byEmail) return byEmail;
+    }
+    // Legacy flat key — fall back for users who set up before email-keying.
     return localStorage.getItem(SHEET_KEY);
   }
 
-  function saveSheetId(id) {
-    if (id) localStorage.setItem(SHEET_KEY, id);
+  function saveSheetId(id, email) {
+    if (!id) return;
+    localStorage.setItem(sheetKeyFor(email), id);
+    // Clear legacy key so it doesn't mask the fresh email-keyed one later.
+    localStorage.removeItem(SHEET_KEY);
   }
 
-  function clearSavedSheetId() {
+  function clearSavedSheetId(email) {
+    if (email) localStorage.removeItem(sheetKeyFor(email));
     localStorage.removeItem(SHEET_KEY);
+  }
+
+  // Nuke everything local (sheet ids, tokens, labels). Used by the "Reset app
+  // data" button in Settings.
+  function clearAllLocalData() {
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('pins_'))
+      .forEach((k) => localStorage.removeItem(k));
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_EXP_KEY);
+    sessionStorage.removeItem(EMAIL_KEY);
   }
 
   // Drive list restricted to files this app (OAuth client) has created or this
@@ -141,7 +167,7 @@
 
   window.Auth = {
     signIn, signOut, getToken, getUserEmail,
-    getSavedSheetId, saveSheetId, clearSavedSheetId,
+    getSavedSheetId, saveSheetId, clearSavedSheetId, clearAllLocalData,
     listAppSheets, isAdmin, authedFetch,
   };
 })();
