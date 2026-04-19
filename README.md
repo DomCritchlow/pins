@@ -83,6 +83,35 @@ Behind the scenes: the app creates `PlaceTracker - <friend email>` in *your* Dri
 
 ---
 
+## Roadmap / open TODOs
+
+### Google Maps Takeout import (not yet built)
+
+Bulk-load the places you already have saved in Google Maps into your Pins notebook. You've already downloaded your Takeout; the piece missing is the importer.
+
+Three implementation paths, roughly in increasing order of effort and cost:
+
+1. **CSV paste (free, ~5 min to ship)** — local Python script parses `Saved Places.json` (GeoJSON) into a CSV matching the sheet schema. You paste the CSV into the Google Sheet below the header row. Places appear without photos / neighborhood / price_tier; you fill those in case-by-case by editing each place in the app (the Places Autocomplete Search field on the edit form will re-fetch metadata).
+2. **CSV paste + lazy enrichment** — same initial import as #1, but whenever a place's detail sheet is opened in Pins, the app re-fetches via Places API to backfill missing metadata and updates the row. Amortizes API cost over normal usage.
+3. **Full bulk enrichment on import** — script also runs Text Search → Details for every place to prefill everything. Best fidelity, ~$0.02 per place in Places API cost (~$4 for 200 places, well under the monthly $200 Google Maps credit).
+
+Open questions to answer before building:
+
+- Exact Takeout format on disk (e.g. `Takeout/Maps (your places)/Saved Places.json` vs per-list CSVs in `Takeout/Saved/`). Both exist depending on export version.
+- Default tag applied to imported rows (e.g. `imported`) so you can filter them later.
+- Where it lives: one-time local script vs. a file-upload UI in the admin panel (the latter is needed if friends should import their own Takeout someday).
+
+Starting recommendation: ship #1 as a local script (`scripts/import-takeout.py`), tag rows `imported`, worry about #2 / #3 only if specific places surface missing metadata you actually care about.
+
+### Other nice-to-haves considered but punted
+
+- **Offline add queue** — save-while-offline + drain on reconnect. Dropped from v1.
+- **Cross-user sharing of places** — e.g. a "date night" list visible to both partners. Not needed for v1.
+- **Custom place photos** (user upload) — currently only Places API photos. Would need Drive for blob storage.
+- **Self-serve admin** — if this ever grows past 5 friends, an in-app onboarding flow that lets new admins configure their own GCP project without touching code.
+
+---
+
 ## Icons
 
 `icons/icon-192.png` and `icons/icon-512.png` are already generated — a cream map-pin mark on terracotta, drawn programmatically to match the app palette. Replace them with your own PNGs at the same paths if you want something different.
