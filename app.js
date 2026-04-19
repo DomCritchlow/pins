@@ -70,24 +70,49 @@
 
       // Load places before showing the main view — if this fails, self-heal
       // or bail to the no-sheet screen rather than stranding the user on an
-      // empty main view with a broken sheet id.
+      // empty main view with a broken sheet id. Some stale sheets appear in
+      // Drive's list but 404 on the Sheets API (likely orphaned grants from
+      // earlier scope-set changes), so we track known-bad ids and exclude
+      // them from re-resolution.
       let places = null;
-      try {
-        places = await Sheets.listPlaces(sheetId);
-      } catch (e) {
-        const msg = String((e && e.message) || '');
-        const stale = msg.includes('404') || msg.includes('403');
-        if (!stale) throw e;
-        console.warn('Stale sheet cache, re-resolving…', e);
-        Auth.clearSavedSheetId(email);
-        sheetId = await resolveSheetId(email);
-        if (!sheetId) { showScreen('no-sheet'); return; }
+      const badIds = new Set();
+      const tryLoad = async (id) => {
         try {
-          places = await Sheets.listPlaces(sheetId);
-        } catch (e2) {
-          // Second attempt failed — bad data behind a cached id we can't fix
-          // automatically. Clear everything sheet-related and show no-sheet.
-          console.warn('Self-heal retry failed, giving up on cached id.', e2);
+          return await Sheets.listPlaces(id);
+        } catch (e) {
+          const msg = String((e && e.message) || '');
+          if (msg.includes('404') || msg.includes('403')) {
+            badIds.add(id);
+            return null;
+          }
+          throw e;
+        }
+      };
+
+      places = await tryLoad(sheetId);
+      if (!places) {
+        // First attempt failed — wipe cache + re-resolve, excluding the bad one.
+        console.warn('Stale sheet cache, re-resolving…');
+        Auth.clearSavedSheetId(email);
+        sheetId = await resolveSheetId(email, badIds);
+        if (!sheetId) { showScreen('no-sheet'); return; }
+        places = await tryLoad(sheetId);
+      }
+      if (!places) {
+        // Still broken — for admin, force-create a brand new sheet bypassing
+        // the Drive list entirely. For non-admin, we're stuck on ask-admin.
+        if (state.isAdmin) {
+          try {
+            sheetId = await Sheets.createSheet({ forEmail: email });
+            Auth.saveSheetId(sheetId, email);
+            places = await Sheets.listPlaces(sheetId);
+          } catch (e3) {
+            console.error('Admin force-create failed:', e3);
+            Auth.clearSavedSheetId(email);
+            showScreen('no-sheet');
+            return;
+          }
+        } else {
           Auth.clearSavedSheetId(email);
           showScreen('no-sheet');
           return;
@@ -124,20 +149,21 @@
   //   3. If admin and still no sheet → auto-create (their own notebook).
   //   4. If friend and we have a pending invite link → show Picker.
   //   5. Otherwise → friend needs an invite link from admin.
-  async function resolveSheetId(email) {
+  async function resolveSheetId(email, excludeIds) {
+    const exclude = excludeIds || new Set();
     const ownName = `${window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker'} - ${email}`;
 
     // 1. Cached on this device (keyed by email so account-switching is safe).
     const cached = Auth.getSavedSheetId(email);
-    if (cached) return cached;
+    if (cached && !exclude.has(cached)) return cached;
 
     // 2. Drive list restricted to drive.file-visible files.
     let files = [];
     try { files = await Auth.listAppSheets(); } catch (e) { console.warn(e); }
-    const own = files.find((f) => f.name === ownName);
+    const own = files.find((f) => f.name === ownName && !exclude.has(f.id));
     if (own) { Auth.saveSheetId(own.id, email); return own.id; }
 
-    // 3. Admin's first sign-in — nothing to pick, create it.
+    // 3. Admin (re)creates their own sheet when nothing usable exists.
     if (state.isAdmin) {
       const id = await Sheets.createSheet({ forEmail: email });
       Auth.saveSheetId(id, email);
@@ -150,8 +176,10 @@
       try {
         const id = await Picker.pickSheet({ title: 'Tap your Pins notebook to connect' });
         sessionStorage.removeItem('pins_pending_invite');
-        Auth.saveSheetId(id, email);
-        return id;
+        if (!exclude.has(id)) {
+          Auth.saveSheetId(id, email);
+          return id;
+        }
       } catch (e) {
         console.warn('Picker cancelled:', e);
       }
