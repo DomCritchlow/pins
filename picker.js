@@ -31,6 +31,18 @@
     pickerLoaded = true;
   }
 
+  // Extract the project number (prefix before the dash) from a Client ID
+  // like "502811448040-xxxxxx.apps.googleusercontent.com". Picker needs this
+  // as `appId` to record the per-file drive.file grant when the user picks
+  // a file. Without setAppId, Picker happily returns a file id but the
+  // Sheets API will 404 on subsequent reads because the grant was never
+  // associated with this app.
+  function appIdFromClientId(clientId) {
+    if (!clientId) return '';
+    const dash = clientId.indexOf('-');
+    return dash > 0 ? clientId.slice(0, dash) : '';
+  }
+
   // Show Picker filtered to spreadsheets matching our naming prefix. Resolves
   // with the selected file id, or rejects on cancel.
   async function pickSheet({ title = 'Select your Pins notebook' } = {}) {
@@ -38,10 +50,14 @@
     const token = Auth.getToken();
     if (!token) throw new Error('not signed in');
     const prefix = window.CONFIG.SHEET_NAME_PREFIX || 'PlaceTracker';
+    const appId = appIdFromClientId(window.CONFIG.CLIENT_ID);
     return new Promise((resolve, reject) => {
-      const view = new google.picker.View(google.picker.ViewId.SPREADSHEETS);
+      const view = new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS);
       view.setMimeTypes('application/vnd.google-apps.spreadsheet');
-      if (view.setQuery) view.setQuery(prefix);
+      view.setMode(google.picker.DocsViewMode.LIST);
+      view.setIncludeFolders(false);
+      view.setSelectFolderEnabled(false);
+      if (prefix && view.setQuery) view.setQuery(prefix);
       const builder = new google.picker.PickerBuilder()
         .enableFeature(google.picker.Feature.NAV_HIDDEN)
         .addView(view)
@@ -57,6 +73,7 @@
             reject(new Error('cancelled'));
           }
         });
+      if (appId) builder.setAppId(appId);
       const picker = builder.build();
       picker.setVisible(true);
     });
