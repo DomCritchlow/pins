@@ -24,9 +24,10 @@ Do this once. Users never need to touch any of it.
 1. **APIs & Services → OAuth consent screen**.
 2. User type: **External**. Publishing status can stay "Testing" while your group is small — just add each user's Google email under **Test users**.
 3. App name: `Pins`. User support email: yours.
-4. Scopes to declare — just these three, deliberately tight:
-   - `.../auth/drive.file` — per-file access, limited to sheets this app created (admin) or the user confirmed via Google Picker (friend). Google's consent screen phrases it "See, edit, create, and delete only the specific Google Drive files you use with this app."
-   - `openid`, `email` — identify the signed-in user (used for naming the sheet and detecting admin).
+4. Scopes to declare:
+   - `.../auth/spreadsheets` — read/write the user's assigned sheet (broad label but the app only ever uses it on one sheet per user — required because drive.file alone can't reliably read sheets admin shared).
+   - `.../auth/drive.file` — admin uses this to create new friend sheets and grant access. Non-admins don't actively use it but it's in the consent screen.
+   - `openid`, `email` — identify the signed-in user.
 
 ### 3. OAuth Client ID
 

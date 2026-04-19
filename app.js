@@ -170,22 +170,19 @@
       return id;
     }
 
-    // 4. Friend with a fresh invite link → confirm via Picker.
+    // 4. Friend with a fresh invite link → use the id directly. With the
+    //    spreadsheets scope, shared sheets are readable from Sheets API
+    //    without needing Picker to bootstrap a per-file grant.
     const invite = sessionStorage.getItem('pins_pending_invite');
-    if (invite) {
-      try {
-        const id = await Picker.pickSheet({ title: 'Tap your Pins notebook to connect' });
-        sessionStorage.removeItem('pins_pending_invite');
-        if (!exclude.has(id)) {
-          Auth.saveSheetId(id, email);
-          return id;
-        }
-      } catch (e) {
-        console.warn('Picker cancelled:', e);
-      }
+    if (invite && !exclude.has(invite)) {
+      sessionStorage.removeItem('pins_pending_invite');
+      Auth.saveSheetId(invite, email);
+      return invite;
     }
 
-    // 5. Out of options — friend needs admin to send them an invite link.
+    // 5. Out of options — friend needs admin to send them an invite link,
+    //    or can tap "Open my notebook" on the no-sheet screen to pick it
+    //    via Picker if they've lost the URL.
     return null;
   }
 
@@ -374,8 +371,8 @@
     };
     const l = list.slice();
     if (state.sort === 'nearest' && state.userLocation) l.sort(byDist);
-    else if (state.sort === 'alpha') l.sort((a, b) => a.name.localeCompare(b.name));
-    else l.sort((a, b) => (b.added_date || '').localeCompare(a.added_date || ''));
+    else if (state.sort === 'alpha') l.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    else l.sort((a, b) => String(b.added_date || '').localeCompare(String(a.added_date || '')));
     return l;
   }
 

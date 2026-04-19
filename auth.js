@@ -4,7 +4,15 @@
 // only see files it *created* (admin path) or files the user *opened* via
 // Google Picker (friend path). Nothing else.
 (function () {
+  // Scopes:
+  //   spreadsheets — read/write any sheet the user has access to. Broader
+  //     than drive.file alone but the only reliable way for friends to read
+  //     sheets admin has shared with them, since Picker-based drive.file
+  //     grant-recording is inconsistent in practice.
+  //   drive.file   — create sheets (admin) + manage permissions on them.
+  //   openid + email — identify the signed-in user.
   const SCOPES = [
+    'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive.file',
     'openid',
     'email',
