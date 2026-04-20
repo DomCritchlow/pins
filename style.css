@@ -289,6 +289,19 @@ a { color: var(--accent); text-decoration: none; }
 .search-wrap i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 18px; }
 .search-wrap input { padding-left: 38px; }
 
+/* Source URL field with inline paste button */
+.paste-wrap { position: relative; }
+.paste-wrap input { width: 100%; padding-right: 44px; }
+.paste-btn {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 34px; height: 34px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); background: transparent;
+  transition: background 120ms, color 120ms;
+}
+.paste-btn:hover { background: var(--surface-2); color: var(--text); }
+.paste-btn i { font-size: 18px; }
+
 .autocomplete {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
   overflow: hidden; margin-top: 4px;

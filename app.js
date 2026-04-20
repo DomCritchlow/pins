@@ -777,6 +777,24 @@
 
     U.qs('#btn-form-cancel').addEventListener('click', () => closeSheet('#form-sheet'));
     U.qs('#btn-form-save').addEventListener('click', saveForm);
+
+    // Clipboard paste button on the Source URL field.
+    // User-initiated so it never triggers an unexpected permission prompt.
+    U.qs('#btn-paste-url').addEventListener('click', async () => {
+      try {
+        const text = (await navigator.clipboard.readText()).trim();
+        if (text && /^https?:\/\//i.test(text)) {
+          U.qs('#f-source').value = text;
+          // If name is still empty, focus it so the user can fill it in next.
+          if (!U.qs('#f-name').value) setTimeout(() => U.qs('#f-name').focus(), 50);
+          U.toast('URL pasted');
+        } else {
+          U.toast('No URL found in clipboard');
+        }
+      } catch (_) {
+        U.toast('Could not read clipboard — paste manually');
+      }
+    });
   }
 
   function addFormTag(t) {

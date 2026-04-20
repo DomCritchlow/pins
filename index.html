@@ -191,7 +191,12 @@
           </div>
           <div class="field">
             <label for="f-source">Source URL</label>
-            <input id="f-source" type="url" placeholder="https://…">
+            <div class="paste-wrap">
+              <input id="f-source" type="url" placeholder="https://…">
+              <button id="btn-paste-url" class="paste-btn" type="button" aria-label="Paste URL from clipboard" title="Paste from clipboard">
+                <i class="ph ph-clipboard-text"></i>
+              </button>
+            </div>
           </div>
           <div class="field field-row">
             <label class="check">

@@ -83,6 +83,62 @@ Behind the scenes: the app creates `PlaceTracker - <friend email>` in *your* Dri
 
 ---
 
+## Saving places from Safari on iPhone
+
+iOS doesn't allow PWAs to appear in the native share sheet (an Apple limitation, not something fixable in code). Two ways around it:
+
+---
+
+### Option A — Paste URL button (built in, zero setup)
+
+The Add form has a clipboard icon button next to the Source URL field. Workflow:
+
+1. Open Safari, browse to a restaurant / place / article.
+2. Tap the address bar → **Copy**.
+3. Switch to Pins → tap **+** → tap the clipboard icon next to Source URL.
+4. The URL pastes in. Fill in the name, tags, save.
+
+Works on iPhone, iPad, Mac, Android — everywhere, no setup.
+
+---
+
+### Option B — iOS Shortcut (appears in the native share sheet)
+
+One-time setup. After this, sharing to Pins is a single tap from any app.
+
+#### Create the Shortcut
+
+1. Open the **Shortcuts** app → tap **+** (top right).
+2. Tap **Add Action** → search **"Receive"** → choose **"Receive Input from Share Sheet"**.
+   - Tap the **Any** pill and select **URLs** only.
+3. Tap **+** → search **"Open URLs"** → choose **Open URLs**.
+4. Tap inside the URL field and type this — inserting the variable in the middle:
+   ```
+   https://domcritchlow.github.io/pins/?url=
+   ```
+   Then tap the **variable button** (the icon with overlapping squares) → choose **Shortcut Input** → the field should read:
+   ```
+   https://domcritchlow.github.io/pins/?url=[Shortcut Input]
+   ```
+5. Tap the shortcut name at the top → rename it **"Add to Pins"**.
+6. Tap **Done**.
+
+#### Use it
+
+From Safari (or any app with a share button): **Share → Add to Pins**. Pins opens with the URL already in the form.
+
+> **Tip:** if the shortcut doesn't appear, scroll down in the share sheet and tap **Edit Actions** to enable it.
+
+#### Share the Shortcut with friends
+
+Once you've created and tested it:
+
+1. Long-press **"Add to Pins"** in the Shortcuts app.
+2. Tap **Share** → **Copy iCloud Link**.
+3. Send the link to your friends. They tap it → **Add Shortcut** → done.
+
+---
+
 ## Roadmap / open TODOs
 
 ### Google Maps Takeout import (not yet built)
