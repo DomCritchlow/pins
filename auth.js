@@ -18,8 +18,7 @@
     'email',
   ].join(' ');
 
-  // Sheet id persists across sessions so we don't need Picker every time.
-  // Token stays session-only.
+  // Both the token and sheet id persist in localStorage across sessions.
   const TOKEN_KEY = 'pins_token';
   const TOKEN_EXP_KEY = 'pins_token_exp';
   const EMAIL_KEY = 'pins_user_email';
@@ -29,13 +28,17 @@
 
   function saveToken(resp) {
     const expiresAt = Date.now() + (resp.expires_in - 60) * 1000;
-    sessionStorage.setItem(TOKEN_KEY, resp.access_token);
-    sessionStorage.setItem(TOKEN_EXP_KEY, String(expiresAt));
+    // localStorage instead of sessionStorage so the token survives iOS PWA
+    // relaunches (iOS wipes sessionStorage every time the app is closed).
+    // Access tokens expire after ~1 hour regardless, so the persistence window
+    // is short and the XSS exposure is identical to sessionStorage.
+    localStorage.setItem(TOKEN_KEY, resp.access_token);
+    localStorage.setItem(TOKEN_EXP_KEY, String(expiresAt));
   }
 
   function getToken() {
-    const t = sessionStorage.getItem(TOKEN_KEY);
-    const exp = Number(sessionStorage.getItem(TOKEN_EXP_KEY) || 0);
+    const t = localStorage.getItem(TOKEN_KEY);
+    const exp = Number(localStorage.getItem(TOKEN_EXP_KEY) || 0);
     if (!t || Date.now() > exp) return null;
     return t;
   }
@@ -72,12 +75,12 @@
   }
 
   function signOut() {
-    const t = sessionStorage.getItem(TOKEN_KEY);
+    const t = localStorage.getItem(TOKEN_KEY);
     if (t && window.google && google.accounts && google.accounts.oauth2) {
       try { google.accounts.oauth2.revoke(t, () => {}); } catch (_) {}
     }
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(TOKEN_EXP_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_EXP_KEY);
     sessionStorage.removeItem(EMAIL_KEY);
     // Note: we intentionally do NOT clear the saved sheet id on sign-out —
     // if the same user signs back in on this device, we want to skip Picker.
@@ -127,8 +130,6 @@
     Object.keys(localStorage)
       .filter((k) => k.startsWith('pins_'))
       .forEach((k) => localStorage.removeItem(k));
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(TOKEN_EXP_KEY);
     sessionStorage.removeItem(EMAIL_KEY);
   }
 
@@ -173,8 +174,14 @@
     return res;
   }
 
+  function hasPreviouslyAuthed() {
+    // A stored token key (even expired) means this device has signed in before,
+    // so it's worth attempting silent re-auth before showing the sign-in screen.
+    return !!localStorage.getItem(TOKEN_KEY);
+  }
+
   window.Auth = {
-    signIn, signOut, getToken, getUserEmail,
+    signIn, signOut, getToken, getUserEmail, hasPreviouslyAuthed,
     getSavedSheetId, saveSheetId, clearSavedSheetId, clearAllLocalData,
     listAppSheets, isAdmin, authedFetch,
   };

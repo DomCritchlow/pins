@@ -18,7 +18,9 @@
   --font-ui: 'Inter', -apple-system, system-ui, sans-serif;
   --font-display: 'Instrument Serif', Georgia, serif;
   --tab-h: 72px;
-  --header-h: 88px;
+  /* 12px padding-top + 40px filter-bar + 12px padding-bottom + 1px border = 65px content;
+     safe-top is added for notched iPhones. JS ResizeObserver refines this at runtime. */
+  --header-h: calc(var(--safe-top) + 65px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
 }
@@ -163,7 +165,7 @@ a { color: var(--accent); text-decoration: none; }
 
 /* ========== MAP ========== */
 
-#pane-map { padding: 0; }
+#pane-map { padding: 0; min-height: 0; }
 #map { position: fixed; inset: 0; top: var(--header-h); bottom: calc(var(--tab-h) + var(--safe-bottom)); }
 .leaflet-container { background: var(--bg); font-family: var(--font-ui); }
 .leaflet-popup-content-wrapper { border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
@@ -174,7 +176,38 @@ a { color: var(--accent); text-decoration: none; }
 .leaflet-control-attribution { font-size: 10px; background: rgba(255,255,255,0.6) !important; }
 @media (prefers-color-scheme: dark) { .leaflet-control-attribution { background: rgba(0,0,0,0.5) !important; color: var(--muted) !important; } }
 
-.pin-marker { width: 28px; height: 28px; }
+/* Div-based map pins — Phosphor icon + colour from first styled tag.
+   .map-pin-wrap clears Leaflet's default white-box divIcon styles. */
+.map-pin-wrap { background: none !important; border: none !important; }
+.map-pin {
+  position: relative; width: 30px; height: 38px;
+  /* drop-shadow applies to the whole visual shape including the triangle tip */
+  filter: drop-shadow(0 2px 5px rgba(0,0,0,0.28));
+}
+.map-pin-head {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--pin-color, #D97757);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.map-pin-head > i {
+  color: rgba(255,255,255,0.95); font-size: 13px; pointer-events: none;
+}
+/* Triangle tip pointing down */
+.map-pin::after {
+  content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+  border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-top: 9px solid var(--pin-color, #D97757);
+}
+/* Small visited badge — green dot with a check at top-right of pin head */
+.map-pin-visited {
+  position: absolute; top: -3px; right: -3px;
+  width: 13px; height: 13px;
+  background: #7A9B76; border-radius: 50%; border: 1.5px solid #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.map-pin-visited i { font-size: 8px; color: #fff; pointer-events: none; }
+
 .user-dot {
   width: 16px; height: 16px; border-radius: 50%; background: #2E7DD7; border: 3px solid #FFFFFF;
   box-shadow: 0 0 0 4px rgba(46, 125, 215, 0.24);
@@ -235,7 +268,8 @@ a { color: var(--accent); text-decoration: none; }
 .sheet-body { padding: 8px 20px 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px; -webkit-overflow-scrolling: touch; }
 .sheet-footer {
   display: flex; gap: 10px; justify-content: flex-end;
-  padding: 12px 20px calc(12px + var(--safe-bottom)); border-top: 1px solid var(--border);
+  /* safe-bottom is handled by sheet-inner's padding-bottom — don't double-count */
+  padding: 12px 20px 12px; border-top: 1px solid var(--border);
 }
 
 /* ========== FORM FIELDS ========== */
@@ -417,6 +451,58 @@ a { color: var(--accent); text-decoration: none; }
   transition: opacity 200ms, transform 200ms;
 }
 .toast:not(.hidden) { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+
+/* ========== I'M HERE FAB ========== */
+
+/* Fixed over the map, only shown when on map view with GPS lock.
+   z-index 25 = above map (10) and tab bar (30... wait tab bar is 30 so bump to 31)
+   Actually tab-bar is z-index 30, so FAB needs to be below sheets (50) but visible.
+   Position it above the tab bar. */
+.here-fab {
+  position: fixed;
+  bottom: calc(var(--tab-h) + var(--safe-bottom) + 16px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  padding: 12px 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 15px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.22), 0 1px 4px rgba(0,0,0,0.12);
+  white-space: nowrap;
+  transition: transform 160ms, box-shadow 160ms;
+}
+.here-fab i { font-size: 20px; }
+.here-fab:active { transform: translateX(-50%) scale(0.96); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+@media (prefers-color-scheme: dark) { .here-fab { color: #1A1917; } }
+
+/* Section header inside the autocomplete dropdown */
+.autocomplete-header {
+  padding: 8px 14px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  user-select: none;
+}
+
+/* ========== DESKTOP ========== */
+
+@media (min-width: 680px) {
+  /* Constrain list and nearby pane content so cards don't stretch edge-to-edge */
+  #list-sort, #list-container,
+  #nearby-header, #nearby-container {
+    max-width: 640px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
 
 /* ========== LOADING ========== */
 .spinner {

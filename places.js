@@ -117,5 +117,90 @@
     return `${BASE}/${photo_reference}/media?maxWidthPx=${maxWidth}&key=${encodeURIComponent(KEY())}`;
   }
 
-  window.Places = { autocomplete, details, photoUrl, newSessionToken };
+  // ---------------------------------------------------------------------------
+  // Nearby search — used by the "I'm Here" FAB on the map.
+  //
+  // Cost: ~$0.032 per call (Places New API, Basic Data SKU).
+  // Triggered only by explicit user action (FAB tap), never passively.
+  //
+  // The response includes all fields needed to fill the add-form directly,
+  // so selecting a result skips the separate details() call (~$0.017 saved).
+  //
+  // Cache: same spot (< 100 m moved) within 3 minutes → free repeat taps.
+  // ---------------------------------------------------------------------------
+  let _nearbyCache = null;
+  const NEARBY_TTL_MS = 3 * 60 * 1000;
+  const NEARBY_CACHE_RADIUS_M = 100;
+
+  async function nearbySearch(location) {
+    if (_nearbyCache) {
+      const age = Date.now() - _nearbyCache.ts;
+      // U.distanceMeters expects objects with .lat/.lng
+      const moved = (window.U && U.distanceMeters)
+        ? U.distanceMeters(location, _nearbyCache)
+        : Infinity;
+      if (age < NEARBY_TTL_MS && moved < NEARBY_CACHE_RADIUS_M) {
+        return _nearbyCache.results;
+      }
+    }
+
+    const res = await fetch(`${BASE}/places:searchNearby`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': KEY(),
+        // Request only the fields that fill the form — keeps the SKU at Basic Data.
+        'X-Goog-FieldMask': [
+          'places.id',
+          'places.displayName',
+          'places.formattedAddress',
+          'places.location',
+          'places.addressComponents',
+          'places.photos',
+          'places.priceLevel',
+        ].join(','),
+      },
+      body: JSON.stringify({
+        locationRestriction: {
+          circle: {
+            center: { latitude: location.lat, longitude: location.lng },
+            radius: 200, // metres — tight enough to mean "I'm here"
+          },
+        },
+        maxResultCount: 6,
+        rankPreference: 'DISTANCE',
+      }),
+    });
+
+    if (!res.ok) return [];
+    const data = await res.json();
+
+    const results = (data.places || []).map((r) => {
+      const comps = r.addressComponents || [];
+      return {
+        name: r.displayName?.text || '',
+        address: r.formattedAddress || '',
+        lat: r.location?.latitude ?? null,
+        lng: r.location?.longitude ?? null,
+        city:
+          pickComponent(comps, 'locality') ||
+          pickComponent(comps, 'postal_town') ||
+          pickComponent(comps, 'administrative_area_level_2') || '',
+        state: pickComponent(comps, 'administrative_area_level_1') || '',
+        country: pickComponent(comps, 'country') || '',
+        neighborhood:
+          pickComponent(comps, 'neighborhood') ||
+          pickComponent(comps, 'sublocality_level_1') ||
+          pickComponent(comps, 'sublocality') || '',
+        place_id: r.id || '',
+        photo_reference: r.photos?.[0]?.name || '',
+        price_tier: r.priceLevel != null ? (PRICE_ENUM[r.priceLevel] ?? null) : null,
+      };
+    });
+
+    _nearbyCache = { lat: location.lat, lng: location.lng, ts: Date.now(), results };
+    return results;
+  }
+
+  window.Places = { autocomplete, details, photoUrl, newSessionToken, nearbySearch };
 })();

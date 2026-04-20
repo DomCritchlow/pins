@@ -43,6 +43,18 @@
 
     if (Auth.getToken()) {
       await enterApp();
+    } else if (Auth.hasPreviouslyAuthed()) {
+      // iOS PWA wipes sessionStorage on every launch, so the token is always
+      // gone at boot even though the user is still signed in via Google.
+      // Attempt a silent re-auth (no consent UI) before falling back to the
+      // manual sign-in screen.
+      try {
+        setSigninBusy(true);
+        await Auth.signIn({ interactive: false });
+        if (Auth.getToken()) { await enterApp(); return; }
+      } catch (_) { /* silent auth failed — show sign-in screen normally */ }
+      finally { setSigninBusy(false); }
+      showScreen('signin');
     } else {
       showScreen('signin');
     }
@@ -200,6 +212,7 @@
       const loc = await U.getLocation();
       state.userLocation = loc;
       if (state.view === 'list' || state.view === 'nearby') render();
+      updateHereFab();
     } catch (_) { /* no location is fine */ }
   }
 
@@ -320,6 +333,23 @@
       });
     });
     U.qs(`#nearby-sheet .seg-btn[data-mode="${state.nearbyMode}"]`).classList.add('active');
+
+    // "I'm Here" FAB — triggers nearby search, costs 1 API call with caching.
+    U.qs('#btn-here').addEventListener('click', () => {
+      openForm(null, { nearbyMode: true });
+    });
+
+    // Keep --header-h in sync with the actual rendered header height so the
+    // fixed map never overlaps the header (notched iPhones + active filter chips).
+    const hdr = document.getElementById('app-header');
+    const syncHeaderHeight = () => {
+      const h = hdr.getBoundingClientRect().height;
+      if (h > 0) {
+        document.documentElement.style.setProperty('--header-h', `${h}px`);
+        if (state.view === 'map') Maps.invalidateSize();
+      }
+    };
+    new ResizeObserver(syncHeaderHeight).observe(hdr);
   }
 
   // ------------------------------------------------------------------
@@ -335,6 +365,13 @@
     if (view === 'map') { Maps.invalidateSize(); renderMap(); }
     if (view === 'nearby') { renderNearby(); }
     if (view === 'list') { renderList(); }
+    updateHereFab();
+  }
+
+  // Show the "I'm Here" FAB only when on the map and GPS is available.
+  function updateHereFab() {
+    const fab = U.qs('#btn-here');
+    if (fab) fab.classList.toggle('hidden', state.view !== 'map' || !state.userLocation);
   }
 
   function render() {
@@ -823,7 +860,56 @@
     }
     renderFormTags();
     openSheet('#form-sheet');
-    setTimeout(() => U.qs('#f-search').focus(), 200);
+    if (!id && prefill && prefill.nearbyMode && state.userLocation) {
+      loadNearbyIntoForm();
+    } else {
+      setTimeout(() => U.qs('#f-search').focus(), 200);
+    }
+  }
+
+  // Fires a nearbySearch and populates the autocomplete dropdown in the add form.
+  // Uses data already in the nearby response — no separate details() call needed.
+  async function loadNearbyIntoForm() {
+    const acWrap = U.qs('#f-autocomplete');
+    acWrap.innerHTML =
+      '<div class="autocomplete-item" style="display:flex;gap:10px;align-items:center;color:var(--muted)">' +
+        '<span class="spinner" style="width:16px;height:16px;border-width:2px;flex-shrink:0"></span>' +
+        'Finding nearby places…' +
+      '</div>';
+    acWrap.classList.remove('hidden');
+
+    try {
+      const places = await Places.nearbySearch(state.userLocation);
+      acWrap.innerHTML = '';
+      if (!places.length) {
+        acWrap.classList.add('hidden');
+        U.toast('Nothing found within 200 m — try searching by name.');
+        setTimeout(() => U.qs('#f-search').focus(), 50);
+        return;
+      }
+      const hdr = document.createElement('div');
+      hdr.className = 'autocomplete-header';
+      hdr.textContent = 'Near you now';
+      acWrap.appendChild(hdr);
+      places.forEach((p) => {
+        const item = document.createElement('div');
+        item.className = 'autocomplete-item';
+        item.innerHTML =
+          `<div class="primary">${U.escapeHtml(p.name)}</div>` +
+          `<div class="secondary">${U.escapeHtml(p.address)}</div>`;
+        item.addEventListener('click', () => {
+          acWrap.classList.add('hidden');
+          // nearbySearch already returns full detail data — no extra API call.
+          fillFormFromDetails(p);
+        });
+        acWrap.appendChild(item);
+      });
+    } catch (e) {
+      console.error(e);
+      acWrap.classList.add('hidden');
+      U.toast('Could not load nearby places.');
+      setTimeout(() => U.qs('#f-search').focus(), 50);
+    }
   }
 
   async function saveForm() {

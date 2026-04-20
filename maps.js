@@ -1,43 +1,61 @@
 // Leaflet map — init lazily, markers update when places/filters change.
 (function () {
   let map = null;
+  let tileLayer = null;
   let markerLayer = null;
   let userLayer = null;
 
-  function svgPin(color, visited) {
+  const ATTR =
+    '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors ' +
+    '© <a href="https://carto.com/attributions">CARTO</a>';
+
+  // CartoDB Positron (light) / Dark Matter (dark) — no API key required,
+  // clean minimal aesthetic that lets the coloured pins stand out.
+  function tileUrl() {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  }
+
+  // Build the HTML for a div-based pin so Phosphor icons render via the
+  // already-loaded font rather than being baked into an SVG data URL.
+  // Design decision: one icon per pin (first styled tag), consistent with
+  // how the pin colour is already determined. The detail card shows all tags.
+  function pinHtml(color, iconName, visited) {
+    const icon = iconName ? `<i class="ph-fill ph-${iconName}"></i>` : '';
     const check = visited
-      ? '<circle cx="24" cy="8" r="6" fill="#FFFFFF"/><path d="M20.5 8l2.5 2.5 4.5-5" fill="none" stroke="#3B7A34" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
+      ? `<span class="map-pin-visited"><i class="ph-fill ph-check"></i></span>`
       : '';
-    const s = encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 44" width="32" height="44">
-        <path d="M16 0C7.2 0 0 7.1 0 16c0 11.6 16 28 16 28s16-16.4 16-28C32 7.1 24.8 0 16 0z" fill="${color}"/>
-        <circle cx="16" cy="16" r="6" fill="#FFFFFF"/>
-        ${check}
-      </svg>`
+    return (
+      `<div class="map-pin" style="--pin-color:${color}">` +
+        `<div class="map-pin-head">${icon}${check}</div>` +
+      `</div>`
     );
-    return `data:image/svg+xml;charset=UTF-8,${s}`;
   }
 
   function iconFor(place) {
-    // Color derives from the place's first styled label (per-user config).
-    // Falls back to the app's terracotta accent when no labels match.
     const style = window.Labels ? Labels.styleFor(place) : null;
     const color = style ? style.color : '#D97757';
-    return L.icon({
-      iconUrl: svgPin(color, !!place.visited),
-      iconSize: [28, 38],
-      iconAnchor: [14, 38],
-      popupAnchor: [0, -34],
+    const iconName = style ? style.icon : null;
+    return L.divIcon({
+      html: pinHtml(color, iconName, !!place.visited),
+      className: 'map-pin-wrap',
+      iconSize: [30, 38],
+      iconAnchor: [15, 38],
+      popupAnchor: [0, -40],
     });
   }
 
   function init() {
     if (map) return map;
     map = L.map('map', { zoomControl: true, attributionControl: true }).setView([40.7128, -74.006], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap',
-    }).addTo(map);
+    tileLayer = L.tileLayer(tileUrl(), { maxZoom: 19, attribution: ATTR }).addTo(map);
+
+    // Swap to the matching tile set when the OS switches dark/light mode.
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      tileLayer.setUrl(tileUrl());
+    });
+
     markerLayer = L.layerGroup().addTo(map);
     return map;
   }
@@ -58,7 +76,11 @@
       );
       m.on('popupopen', (e) => {
         const link = e.popup.getElement().querySelector('[data-pin-open]');
-        if (link) link.addEventListener('click', (ev) => { ev.preventDefault(); onOpen && onOpen(p.id); m.closePopup(); });
+        if (link) link.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          onOpen && onOpen(p.id);
+          m.closePopup();
+        });
       });
       m.addTo(markerLayer);
       bounds.push([p.lat, p.lng]);
@@ -66,7 +88,12 @@
 
     if (userLocation) {
       if (userLayer) userLayer.remove();
-      const icon = L.divIcon({ className: '', html: '<div class="user-dot"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
+      const icon = L.divIcon({
+        className: '',
+        html: '<div class="user-dot"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
       userLayer = L.marker([userLocation.lat, userLocation.lng], { icon }).addTo(map);
       bounds.push([userLocation.lat, userLocation.lng]);
     }
