@@ -2,7 +2,13 @@
 // Columns A..S map to the schema in build_plan.md.
 (function () {
   const RANGE = 'places!A2:S';
-  const WRITE_RANGE = 'places!A:S';
+  // Anchor table detection on the ID column (A) only.
+  // Using A:S lets Sheets re-detect the table boundary from the auto-formatted
+  // date cells in column R after a CSV import, causing new rows to land at R
+  // instead of A. Anchoring on A:A forces detection on the UUID column, which
+  // is always plain text and always starts at A — the 19-value row still fills
+  // A through S regardless of the detection range.
+  const WRITE_RANGE = 'places!A:A';
 
   // Google Sheets with valueInputOption=USER_ENTERED auto-coerces ISO date
   // strings into real date cells. UNFORMATTED_VALUE reads then return them as
