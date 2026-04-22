@@ -80,63 +80,84 @@
         return;
       }
 
-      // Load places before showing the main view — if this fails, self-heal
-      // or bail to the no-sheet screen rather than stranding the user on an
-      // empty main view with a broken sheet id. Some stale sheets appear in
-      // Drive's list but 404 on the Sheets API (likely orphaned grants from
-      // earlier scope-set changes), so we track known-bad ids and exclude
-      // them from re-resolution.
-      let places = null;
-      const badIds = new Set();
-      const tryLoad = async (id) => {
-        try {
-          return await Sheets.listPlaces(id);
-        } catch (e) {
-          const msg = String((e && e.message) || '');
-          if (msg.includes('404') || msg.includes('403')) {
-            badIds.add(id);
-            return null;
-          }
-          throw e;
-        }
-      };
-
-      places = await tryLoad(sheetId);
-      if (!places) {
-        // First attempt failed — wipe cache + re-resolve, excluding the bad one.
-        console.warn('Stale sheet cache, re-resolving…');
-        Auth.clearSavedSheetId(email);
-        sheetId = await resolveSheetId(email, badIds);
-        if (!sheetId) { showScreen('no-sheet'); return; }
-        places = await tryLoad(sheetId);
-      }
-      if (!places) {
-        // Still broken — for admin, force-create a brand new sheet bypassing
-        // the Drive list entirely. For non-admin, we're stuck on ask-admin.
-        if (state.isAdmin) {
-          try {
-            sheetId = await Sheets.createSheet({ forEmail: email });
-            Auth.saveSheetId(sheetId, email);
-            places = await Sheets.listPlaces(sheetId);
-          } catch (e3) {
-            console.error('Admin force-create failed:', e3);
-            Auth.clearSavedSheetId(email);
-            showScreen('no-sheet');
-            return;
-          }
-        } else {
-          Auth.clearSavedSheetId(email);
-          showScreen('no-sheet');
-          return;
-        }
-      }
-
+    // ── Stale-while-revalidate cache ─────────────────────────────────────────
+    // Show last-known places instantly (localStorage, ~0 ms), then silently
+    // refresh from the Sheets API and re-render when fresh data arrives.
+    // On a typical relaunch the user sees their data immediately instead of
+    // waiting 1-2 s for the network round-trip.
+    const cached = Auth.loadCachedPlaces(sheetId);
+    let shownFromCache = false;
+    if (cached) {
       state.sheetId = sheetId;
-      state.places = places;
+      state.places = cached;
       showScreen('main');
       U.qs('#settings-admin').classList.toggle('hidden', !state.isAdmin);
       tryGetLocation();
       render();
+      shownFromCache = true;
+    }
+
+    // ── Fresh fetch (always runs — validates and updates the cache) ───────────
+    // If we already showed cached data and the fetch fails (offline, transient
+    // error) we silently keep the cache; the user can still browse and the
+    // data is safe in their sheet. Only block/redirect to no-sheet when there
+    // is genuinely no data to show at all.
+    let places = null;
+    const badIds = new Set();
+    const tryLoad = async (id) => {
+      try {
+        return await Sheets.listPlaces(id);
+      } catch (e) {
+        const msg = String((e && e.message) || '');
+        if (msg.includes('404') || msg.includes('403')) {
+          badIds.add(id);
+          return null;
+        }
+        throw e;
+      }
+    };
+
+    places = await tryLoad(sheetId);
+    if (!places && !shownFromCache) {
+      // First attempt failed — wipe cache + re-resolve, excluding the bad one.
+      console.warn('Stale sheet cache, re-resolving…');
+      Auth.clearSavedSheetId(email);
+      sheetId = await resolveSheetId(email, badIds);
+      if (!sheetId) { showScreen('no-sheet'); return; }
+      places = await tryLoad(sheetId);
+    }
+    if (!places && !shownFromCache) {
+      // Still broken — for admin, force-create a brand new sheet bypassing
+      // the Drive list entirely. For non-admin, we're stuck on ask-admin.
+      if (state.isAdmin) {
+        try {
+          sheetId = await Sheets.createSheet({ forEmail: email });
+          Auth.saveSheetId(sheetId, email);
+          places = await Sheets.listPlaces(sheetId);
+        } catch (e3) {
+          console.error('Admin force-create failed:', e3);
+          Auth.clearSavedSheetId(email);
+          showScreen('no-sheet');
+          return;
+        }
+      } else {
+        Auth.clearSavedSheetId(email);
+        showScreen('no-sheet');
+        return;
+      }
+    }
+
+    if (places) {
+      Auth.saveCachedPlaces(sheetId, places);
+      state.sheetId = sheetId;
+      state.places = places;
+      if (!shownFromCache) {
+        showScreen('main');
+        U.qs('#settings-admin').classList.toggle('hidden', !state.isAdmin);
+        tryGetLocation();
+      }
+      render(); // always re-render — cheap, updates any changes since last cache
+    }
 
       // If the user entered via a shared URL, open the prefilled form.
       const pending = sessionStorage.getItem('pins_pending_share');

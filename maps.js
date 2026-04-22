@@ -61,7 +61,11 @@
       tileLayer.setUrl(tileUrl());
     });
 
-    markerLayer = L.layerGroup().addTo(map);
+    markerLayer = L.markerClusterGroup({
+      showCoverageOnHover: false, // don't show the cluster boundary polygon
+      maxClusterRadius: 60,       // tighter than default 80 — feels less aggressive
+      spiderfyOnMaxZoom: true,    // spread overlapping pins at max zoom
+    }).addTo(map);
     return map;
   }
 

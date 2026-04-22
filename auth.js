@@ -136,6 +136,30 @@
     localStorage.removeItem(SHEET_KEY);
   }
 
+  // ---------------------------------------------------------------------------
+  // Places cache — stale-while-revalidate so the app feels instant on relaunch.
+  // Keyed by sheetId so different users on the same device don't share data.
+  // Cleared by clearAllLocalData() because the key starts with 'pins_'.
+  // ---------------------------------------------------------------------------
+  function placesCacheKey(sheetId) {
+    return `pins_places_${sheetId}`;
+  }
+
+  function loadCachedPlaces(sheetId) {
+    try {
+      const raw = localStorage.getItem(placesCacheKey(sheetId));
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function saveCachedPlaces(sheetId, places) {
+    try {
+      localStorage.setItem(placesCacheKey(sheetId), JSON.stringify(places));
+    } catch (_) { /* quota exceeded — best-effort, non-fatal */ }
+  }
+
   // Nuke everything local (sheet ids, tokens, labels). Used by the "Reset app
   // data" button in Settings.
   function clearAllLocalData() {
@@ -195,6 +219,7 @@
   window.Auth = {
     signIn, signOut, getToken, getUserEmail, hasPreviouslyAuthed,
     getSavedSheetId, saveSheetId, clearSavedSheetId, clearAllLocalData,
+    loadCachedPlaces, saveCachedPlaces,
     listAppSheets, isAdmin, authedFetch,
   };
 })();
