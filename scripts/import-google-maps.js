@@ -75,75 +75,246 @@ function parseAddress(address, countryCode) {
 }
 
 // ---------------------------------------------------------------------------
-// Tag inference — keyword matching against place name, zero API cost.
-// Covers ~40-50% of places where the category is visible in the name.
+// Tag inference — keyword rules + known-name lookup, zero API cost.
 // All tags are editable in the app after import.
 // ---------------------------------------------------------------------------
+
+// Regex rules — fire on any place whose name contains the pattern.
 const TAG_RULES = [
   // Accommodation — brand names + generic terms
-  [/(marriott|hilton|sheraton|hyatt|ritz.?carlton|four seasons|radisson|westin|novotel|ibis|meininger)/i, 'hotel'],
+  [/(marriott|hilton|sheraton|hyatt|ritz.?carlton|four seasons|radisson|westin|novotel|ibis|meininger|wyndham|doubletree|hampton inn|holiday inn|best western|locke\b)/i, 'hotel'],
   [/\b(hotel|hostel|inn\b|lodge|motel|resort|suites)\b/i, 'hotel'],
 
-  // Coffee before café so "coffee shop" doesn't double-tag
-  [/\b(coffee|kaffee|espresso|cappuccino|roasters?|roastery)\b/i, 'coffee'],
+  // Coffee — no trailing \b so "coffeehouse" still matches
+  [/coffee|kaffee|espresso|cappuccino|roasters?|roastery/i, 'coffee'],
 
   // Bakery
-  [/\b(bakery|b[äa]ckerei|konditorei|p[âa]tisserie|pastry)\b/i, 'bakery'],
+  [/\b(bakery|b[äa]ckerei|konditorei|p[âa]tisserie|pastry|boulangerie|croissant)\b/i, 'bakery'],
 
   // Cuisine-specific
-  [/\b(pizza|pizzeria)\b/i, 'pizza'],
+  [/\b(pizza|pizzeria|pinsa)\b/i, 'pizza'],
   [/\b(sushi|ramen|izakaya)\b/i, 'japanese'],
-  [/\b(burger|burgers?)\b/i, 'burgers'],
+  [/burger/i, 'burgers'],
   [/\b(thai)\b/i, 'thai'],
   [/\b(indian|curry)\b/i, 'indian'],
   [/\b(mexican|taco|tacos?)\b/i, 'mexican'],
+  [/\b(korean)\b/i, 'korean'],
+  [/\b(vietnamese|viet\b)\b/i, 'vietnamese'],
+  [/\b(dumpling|dim.?sum)\b/i, 'restaurant'],
 
   // Café vs restaurant
   [/\b(caf[eé])\b/i, 'cafe'],
+  [/creamery|gelato/i, 'cafe'],
+  [/\bbagel\b/i, 'cafe'],
   [/\b(restaurant|bistro|brasserie|trattoria|osteria|gastrobar|gastropub|steakhouse)\b/i, 'restaurant'],
-  [/\bweinstube\b/i, 'restaurant'],
+  [/\b(wirtshaus|weinstube|speisekammer)\b/i, 'restaurant'],
+  [/veg[ai]n\b/i, 'restaurant'],
 
-  // Bar & drinks (after restaurant to avoid conflicts)
-  [/\b(bar|pub|lounge|taproom|speakeasy)\b/i, 'bar'],
+  // Bar & drinks
+  [/\b(bar|pub|lounge|taproom|speakeasy|schankstelle)\b/i, 'bar'],
   [/\b(brewery|brauerei|biergarten)\b/i, 'bar'],
+  [/beer.?garden/i, 'bar'],
+  [/craft.?beer/i, 'bar'],
 
-  // Wine — leading-word match handles compound German words (Weinstube, Weinbar, etc.)
-  [/\bwein|wine\b/i, 'wine'],
+  // Wine — leading-word match handles German compounds (Weinstube, Weinbar, etc.)
+  [/\bwein|wine|winecellar|vineyard|winery|weingut/i, 'wine'],
 
-  // Culture
+  // Culture & entertainment
   [/\b(museum)\b/i, 'museum'],
   [/\b(galerie|gallery)\b/i, 'gallery'],
   [/\b(theater|theatre|opera|kino|cinema)\b/i, 'culture'],
-  [/\b(church|kirche|chapel|cathedral|monastery)\b/i, 'culture'],
+  [/\b(church|kirche|chapel|cathedral|dom\b|monastery)\b/i, 'culture'],
+  [/\b(castle|burg\b|palace|schloss)\b/i, 'culture'],
+  [/football.?club|soccer.?club/i, 'culture'],
+  [/comedy.?(club|cellar)/i, 'culture'],
+  [/convention.?center|messe\b/i, 'culture'],
 
   // Outdoors
-  [/\b(park|garden|garten|botanical|beach|trail)\b/i, 'outdoors'],
+  [/\b(park|garden|garten|botanical|beach|trail|dunes?|preserve|lake|see\b)\b/i, 'outdoors'],
 
   // Wellness / fitness
   [/\b(spa|wellness|sauna)\b/i, 'wellness'],
   [/\b(yoga|meditation|zen|retreat)\b/i, 'wellness'],
-  [/\b(gym|fitness|crossfit)\b/i, 'fitness'],
+  [/wohlfühlbad|solebad|thermalbad|freibad/i, 'wellness'],
+  [/\b(gym|fitness|crossfit|turnhalle)\b/i, 'fitness'],
 
   // Shopping
-  [/\b(boutique|laden)\b/i, 'shopping'],
+  [/\b(boutique|laden|orthopadie|orthop[äa]die)\b/i, 'shopping'],
   [/\b(shop|store)\b/i, 'shopping'],
-  [/\b(market|markt|march[eé]|bazaar)\b/i, 'market'],
+  [/\b(markthalle)\b/i, 'market'],
+  [/\b(market|markt|march[eé]|bazaar|halles?)\b/i, 'market'],
+
+  // Medical
+  [/klinikum|krankenhaus|notaufnahme|urgent.?care/i, 'medical'],
 
   // Education
-  [/\b(university|college|school|library|bibliothek)\b/i, 'education'],
+  [/\b(university|college|school|library|bibliothek|laboratory|campus)\b/i, 'education'],
 
   // Transport
   [/\b(parkhaus|parking)\b/i, 'parking'],
   [/\b(airport|flughafen|bahnhof)\b/i, 'transport'],
 ];
 
+// Known-name lookup — for well-known places where the category isn't in the name.
+// Keys are lowercased exact place names. Tags here take precedence and also
+// merge with any TAG_RULES matches.
+const KNOWN_NAMES = {
+  // ── Food & restaurants ─────────────────────────────────────────────────────
+  'blue barn polk':                          ['restaurant'],
+  'meatballs for the people':                ['restaurant'],
+  'aifur':                                   ['restaurant', 'bar'],
+  'thang long':                              ['restaurant', 'vietnamese'],
+  'vietal kitchen stuttgart':                ['restaurant', 'vietnamese'],
+  'zama':                                    ['restaurant'],
+  'gans woanders':                           ['restaurant', 'bar'],
+  'das winkelwerk':                          ['cafe', 'restaurant'],
+  'panino mondiale - specialità lampredotto':['restaurant'],
+  'chez paul':                               ['restaurant'],
+  'quai ouest':                              ['restaurant'],
+  'cavallino spaghettaro':                   ['restaurant'],
+  '60 seconds to napoli | hamburg':          ['restaurant'],
+  'the coach house kitchen':                 ['restaurant'],
+  'pinsa manufaktur stuttgart':              ['restaurant'],
+  'loy vegan':                               ['restaurant'],
+  'season marais':                           ['restaurant'],
+  'désolée papa':                            ['restaurant'],
+  'au petit gourmet':                        ['restaurant'],
+  'falscher hase':                           ['restaurant'],
+  'speisekammer west':                       ['restaurant'],
+  'wirtshaus waldquelle':                    ['restaurant'],
+  "s'wirtshaus am see friedrichshafen":      ['restaurant'],
+  'seegut zeppelin':                         ['restaurant'],
+  'soban - korean dining':                   ['restaurant', 'korean'],
+  'frankfurter wirtshaus':                   ['restaurant'],
+  'your dumplings 豆浆和生煎':               ['restaurant', 'chinese'],
+  'vegi stuttgart':                          ['restaurant'],
+  'bond 45 ny':                              ['restaurant'],
+  "ellen's stardust diner":                  ['restaurant'],
+  'charlie bird':                            ['restaurant'],
+  'the barn at 678':                         ['restaurant'],
+  'bungalow 7':                              ['restaurant', 'bar'],
+  'while we were young kitchen & cocktails': ['restaurant', 'bar'],
+  'der daddy - always a pleasure':           ['restaurant', 'bar'],
+  'alte wache':                              ['bar', 'restaurant'],
+  'sportcafé carambolage in stuttgart am feuersee - stuttgart': ['bar', 'cafe'],
+  'l\'estancobychez georges.':              ['bar', 'wine'],
+  'gangundgäbe':                             ['restaurant'],
+  'se vende':                                ['restaurant'],
+  'passage des croisettes':                  ['shopping'],
+
+  // ── Bars ───────────────────────────────────────────────────────────────────
+  'hofbräuhaus münchen':                     ['bar'],
+  'hofbräukeller':                           ['bar'],
+  'bahnwärter thiel':                        ['bar', 'culture'],
+  'alte utting':                             ['bar'],
+  'szimpla kert':                            ['bar'],
+  'dante nyc':                               ['bar', 'restaurant'],
+  'jigger & spoon':                          ['bar'],
+  'schankstelle':                            ['bar'],
+  'vicky barcelona':                         ['bar'],
+  'horse & hyde':                            ['bar'],
+  'kafka':                                   ['bar', 'cafe'],
+  'kraftpaule - craft beer in stuttgart':    ['bar'],
+  '8th street winecellar':                   ['wine', 'bar'],
+  'astarix trier':                           ['bar'],
+  'eagle':                                   ['bar'],
+
+  // ── Coffee & cafes ─────────────────────────────────────────────────────────
+  'cartel roasting co':                      ['coffee'],
+  'my little cup':                           ['coffee'],
+  'good earth coffeehouse - banff':          ['coffee'],
+  'eisbrunnen - plant-based creamery':       ['cafe'],
+  'parfait paris':                           ['cafe'],
+  'au croissant doré':                       ['cafe', 'bakery'],
+  'spoon & spindle':                         ['cafe'],
+  'hey i like it here':                      ['cafe'],
+
+  // ── Shopping ───────────────────────────────────────────────────────────────
+  "trader joe's":                            ['shopping'],
+  'lidl':                                    ['shopping'],
+  'the clothes rack':                        ['shopping'],
+  'tracksmith':                              ['shopping'],
+  'pudel orthopädie-schuhtechnik gmbh':      ['shopping'],
+  'blumenhaus heidebrecht':                  ['shopping'],
+  'officine universelle buly 1803':          ['shopping'],
+  'merci':                                   ['shopping'],
+  'globetrotter stuttgart':                  ['shopping'],
+
+  // ── Hotels ─────────────────────────────────────────────────────────────────
+  'turing locke, cambridge':                 ['hotel'],
+  'club wyndham midtown 45':                 ['hotel'],
+
+  // ── Fitness / wellness ─────────────────────────────────────────────────────
+  'david lloyd frankfurt skyline plaza':     ['fitness'],
+  'f3 das wohlfühlbad':                      ['wellness'],
+  'solebad cannstatt':                       ['wellness'],
+
+  // ── Museums / culture ──────────────────────────────────────────────────────
+  'tate modern':                             ['museum'],
+  'comedy cellar':                           ['culture'],
+  "fisherman's bastion":                     ['culture'],
+  'buda castle':                             ['culture'],
+  'fulham football club':                    ['culture'],
+  'messe düsseldorf':                        ['culture'],
+  'kap europa, convention center messe frankfurt': ['culture'],
+  'phantom of broadway':                     ['culture'],
+  'hahnen gate':                             ['culture'],
+  'wilhelm marx building':                   ['culture'],
+  'friedhof st. matthias':                   ['culture'],
+  'planet marfa':                            ['culture'],
+  'bowling center bitburg flugplatz':        ['culture'],
+  'glänta kyoto sanjo kawaramachi':          ['restaurant'],
+
+  // ── Outdoors ───────────────────────────────────────────────────────────────
+  'eisbachwelle':                            ['outdoors'],
+  'breitenauer see':                         ['outdoors'],
+  'blue hole dive site':                     ['outdoors'],
+  'moselrundfahrten':                        ['outdoors'],
+  'savage neck dunes natural area preserve': ['outdoors'],
+  'forstbw - house of the forest':           ['outdoors', 'education'],
+  'chisholm vineyards at adventure farm':    ['wine', 'outdoors'],
+  'keswick vineyards':                       ['wine'],
+
+  // ── Markets ────────────────────────────────────────────────────────────────
+  'les grandes halles du vieux-port':        ['market'],
+  'markthalle stuttgart':                    ['market'],
+  'marktplatz':                              ['market'],
+  'viktualienmarkt beergarden':              ['market', 'bar', 'outdoors'],
+
+  // ── Medical ────────────────────────────────────────────────────────────────
+  'diakonie-klinikum stuttgart - zentrale notaufnahme': ['medical'],
+  'tru primary & urgent care (truhealthnow) - germantown': ['medical'],
+
+  // ── Education ──────────────────────────────────────────────────────────────
+  'mit lincoln laboratory':                  ['education'],
+  'cybercampus sverige | sweden':            ['education'],
+
+  // ── Transport ──────────────────────────────────────────────────────────────
+  'brussel-noord':                           ['transport'],
+
+  // ── Remaining specific places ───────────────────────────────────────────────
+  "l'estancobychezgeorges.":                 ['bar', 'wine'],
+  'aafes shopette':                          ['shopping'],
+  'nike house of innovation nyc':            ['shopping'],
+  'the old bridge':                          ['bar'],
+  'sutsche':                                 ['restaurant'],
+  'thunderbird dfac':                        ['restaurant'],
+  'black potion sedona':                     ['wellness'],
+  'black rose tattooers':                    ['shopping'],
+};
+
 function inferTags(name) {
   const tags = new Set();
+
+  // Exact known-name lookup (case-insensitive).
+  const known = KNOWN_NAMES[name.toLowerCase()];
+  if (known) known.forEach((t) => tags.add(t));
+
+  // Regex rules always run — may add extra tags on top of known-name results.
   for (const [rx, tag] of TAG_RULES) {
     if (rx.test(name)) tags.add(tag);
   }
-  // "hotel" implies accommodation, not food — remove food tags if hotel matched
-  // (e.g. "Rotterdam Marriott Hotel" shouldn't get 'bar' from lobby bar names)
+
   return Array.from(tags);
 }
 
