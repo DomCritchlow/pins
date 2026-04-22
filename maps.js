@@ -5,6 +5,11 @@
   let markerLayer = null;
   let userLayer = null;
 
+  // Auto-zoom state — we only set the initial view once, then leave the user
+  // in control. _centeredOnUser tracks whether we've already snapped to GPS.
+  let _viewInitialized = false;
+  let _centeredOnUser  = false;
+
   const ATTR =
     '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors ' +
     '© <a href="https://carto.com/attributions">CARTO</a>';
@@ -98,8 +103,27 @@
       bounds.push([userLocation.lat, userLocation.lng]);
     }
 
-    if (bounds.length) {
-      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+    // ── Auto-zoom (one-time) ────────────────────────────────────────────────
+    // Priority 1: snap to GPS the first time a user location arrives.
+    //   With worldwide data, fitBounds would show the entire globe — GPS
+    //   gives a much more useful street-level starting point.
+    // Priority 2: if we have no GPS yet, center on the most recently saved
+    //   place at a city zoom rather than fitting all worldwide pins.
+    // After the first view is set we leave the user in control; subsequent
+    // renders (filter changes, etc.) never move the map.
+    if (userLocation && !_centeredOnUser) {
+      map.setView([userLocation.lat, userLocation.lng], 13);
+      _centeredOnUser  = true;
+      _viewInitialized = true;
+    } else if (!_viewInitialized && bounds.length) {
+      // No GPS — pick the most recently saved place as a sensible default.
+      const recent = places
+        .filter((p) => p.lat != null && p.lng != null)
+        .sort((a, b) => String(b.added_date || '').localeCompare(String(a.added_date || '')));
+      if (recent.length) {
+        map.setView([recent[0].lat, recent[0].lng], 13);
+      }
+      _viewInitialized = true;
     }
   }
 
