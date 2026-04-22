@@ -82,11 +82,6 @@
 
       <section id="pane-map" class="pane hidden">
         <div id="map"></div>
-        <!-- Shown only on map view when GPS is available -->
-        <button id="btn-here" class="here-fab hidden" aria-label="Add a nearby place">
-          <i class="ph-fill ph-map-pin"></i>
-          <span>Add nearby</span>
-        </button>
       </section>
 
       <section id="pane-nearby" class="pane hidden">
@@ -104,8 +99,12 @@
         <button class="tab active" data-tab="list"><i class="ph ph-list-bullets"></i><span>List</span></button>
         <button class="tab" data-tab="map"><i class="ph ph-map-trifold"></i><span>Map</span></button>
         <button class="tab" data-tab="nearby"><i class="ph ph-navigation-arrow"></i><span>Nearby</span></button>
-        <button class="tab" data-tab="add"><i class="ph-fill ph-plus-circle"></i><span>Add</span></button>
       </nav>
+
+      <!-- Global add FAB — shown on all main screens; triggers nearby mode on map view -->
+      <button id="btn-add-fab" class="add-fab" aria-label="Add a place">
+        <i class="ph-fill ph-plus"></i>
+      </button>
     </main>
 
     <!-- Filter drawer -->

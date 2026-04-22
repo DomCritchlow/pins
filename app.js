@@ -267,11 +267,16 @@
 
     // Tab bar
     U.qsa('#tab-bar .tab').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const tab = btn.dataset.tab;
-        if (tab === 'add') { openForm(null); return; }
-        setView(tab);
-      });
+      btn.addEventListener('click', () => setView(btn.dataset.tab));
+    });
+
+    // Global add FAB — on map with GPS triggers nearby mode, otherwise plain add form
+    U.qs('#btn-add-fab').addEventListener('click', () => {
+      if (state.view === 'map' && state.userLocation) {
+        openForm(null, { nearbyMode: true });
+      } else {
+        openForm(null);
+      }
     });
 
     // Search
@@ -355,11 +360,6 @@
     });
     U.qs(`#nearby-sheet .seg-btn[data-mode="${state.nearbyMode}"]`).classList.add('active');
 
-    // "I'm Here" FAB — triggers nearby search, costs 1 API call with caching.
-    U.qs('#btn-here').addEventListener('click', () => {
-      openForm(null, { nearbyMode: true });
-    });
-
     // Keep --header-h in sync with the actual rendered header height so the
     // fixed map never overlaps the header (notched iPhones + active filter chips).
     const hdr = document.getElementById('app-header');
@@ -389,11 +389,8 @@
     updateHereFab();
   }
 
-  // Show the "I'm Here" FAB only when on the map and GPS is available.
-  function updateHereFab() {
-    const fab = U.qs('#btn-here');
-    if (fab) fab.classList.toggle('hidden', state.view !== 'map' || !state.userLocation);
-  }
+  // FAB is always visible; kept as a no-op so existing call-sites don't break.
+  function updateHereFab() {}
 
   function render() {
     renderActiveFilters();
@@ -672,8 +669,9 @@
       ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}${p.place_id ? `&query_place_id=${encodeURIComponent(p.place_id)}` : ''}`
       : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name)}`;
     inner.innerHTML = `
-      <div class="sheet-handle"></div>
-      ${photo ? `<div class="detail-hero" style="background-image:url('${photo}')"></div>` : ''}
+      ${photo
+        ? `<div class="detail-hero" style="background-image:url('${photo}')"><div class="sheet-handle"></div></div>`
+        : '<div class="sheet-handle"></div>'}
       <div class="detail-body">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
           <h2 class="detail-title">${U.escapeHtml(p.name)}</h2>
