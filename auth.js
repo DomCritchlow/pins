@@ -22,6 +22,8 @@
   const TOKEN_KEY = 'pins_token';
   const TOKEN_EXP_KEY = 'pins_token_exp';
   const EMAIL_KEY = 'pins_user_email';
+  // Persisted email for login_hint — avoids account-picker on re-auth.
+  const EMAIL_LS_KEY = 'pins_user_email_ls';
   const SHEET_KEY = 'pins_sheet_id';
 
   let tokenClient = null;
@@ -67,7 +69,13 @@
           resolve(resp);
         };
         client.error_callback = (err) => reject(err);
-        client.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+        // Never force prompt:'consent' after the first grant — it makes Google
+        // show the full permissions screen on every re-auth. Empty prompt lets
+        // Google silently reuse an active session, or at worst show a one-tap
+        // "Continue as you" button. login_hint pre-selects the account so even
+        // the account-picker step is skipped.
+        const hint = localStorage.getItem(EMAIL_LS_KEY) || '';
+        client.requestAccessToken({ prompt: '', login_hint: hint });
       } catch (e) {
         reject(e);
       }
@@ -81,6 +89,7 @@
     }
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_EXP_KEY);
+    localStorage.removeItem(EMAIL_LS_KEY);
     sessionStorage.removeItem(EMAIL_KEY);
     // Note: we intentionally do NOT clear the saved sheet id on sign-out —
     // if the same user signs back in on this device, we want to skip Picker.
@@ -93,7 +102,10 @@
     if (!res.ok) throw new Error(`userinfo ${res.status}`);
     const body = await res.json();
     const email = (body.email || '').toLowerCase();
-    if (email) sessionStorage.setItem(EMAIL_KEY, email);
+    if (email) {
+      sessionStorage.setItem(EMAIL_KEY, email);
+      localStorage.setItem(EMAIL_LS_KEY, email);
+    }
     return email;
   }
 
