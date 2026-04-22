@@ -75,6 +75,79 @@ function parseAddress(address, countryCode) {
 }
 
 // ---------------------------------------------------------------------------
+// Tag inference — keyword matching against place name, zero API cost.
+// Covers ~40-50% of places where the category is visible in the name.
+// All tags are editable in the app after import.
+// ---------------------------------------------------------------------------
+const TAG_RULES = [
+  // Accommodation — brand names + generic terms
+  [/(marriott|hilton|sheraton|hyatt|ritz.?carlton|four seasons|radisson|westin|novotel|ibis|meininger)/i, 'hotel'],
+  [/\b(hotel|hostel|inn\b|lodge|motel|resort|suites)\b/i, 'hotel'],
+
+  // Coffee before café so "coffee shop" doesn't double-tag
+  [/\b(coffee|kaffee|espresso|cappuccino|roasters?|roastery)\b/i, 'coffee'],
+
+  // Bakery
+  [/\b(bakery|b[äa]ckerei|konditorei|p[âa]tisserie|pastry)\b/i, 'bakery'],
+
+  // Cuisine-specific
+  [/\b(pizza|pizzeria)\b/i, 'pizza'],
+  [/\b(sushi|ramen|izakaya)\b/i, 'japanese'],
+  [/\b(burger|burgers?)\b/i, 'burgers'],
+  [/\b(thai)\b/i, 'thai'],
+  [/\b(indian|curry)\b/i, 'indian'],
+  [/\b(mexican|taco|tacos?)\b/i, 'mexican'],
+
+  // Café vs restaurant
+  [/\b(caf[eé])\b/i, 'cafe'],
+  [/\b(restaurant|bistro|brasserie|trattoria|osteria|gastrobar|gastropub|steakhouse)\b/i, 'restaurant'],
+  [/\bweinstube\b/i, 'restaurant'],
+
+  // Bar & drinks (after restaurant to avoid conflicts)
+  [/\b(bar|pub|lounge|taproom|speakeasy)\b/i, 'bar'],
+  [/\b(brewery|brauerei|biergarten)\b/i, 'bar'],
+
+  // Wine — leading-word match handles compound German words (Weinstube, Weinbar, etc.)
+  [/\bwein|wine\b/i, 'wine'],
+
+  // Culture
+  [/\b(museum)\b/i, 'museum'],
+  [/\b(galerie|gallery)\b/i, 'gallery'],
+  [/\b(theater|theatre|opera|kino|cinema)\b/i, 'culture'],
+  [/\b(church|kirche|chapel|cathedral|monastery)\b/i, 'culture'],
+
+  // Outdoors
+  [/\b(park|garden|garten|botanical|beach|trail)\b/i, 'outdoors'],
+
+  // Wellness / fitness
+  [/\b(spa|wellness|sauna)\b/i, 'wellness'],
+  [/\b(yoga|meditation|zen|retreat)\b/i, 'wellness'],
+  [/\b(gym|fitness|crossfit)\b/i, 'fitness'],
+
+  // Shopping
+  [/\b(boutique|laden)\b/i, 'shopping'],
+  [/\b(shop|store)\b/i, 'shopping'],
+  [/\b(market|markt|march[eé]|bazaar)\b/i, 'market'],
+
+  // Education
+  [/\b(university|college|school|library|bibliothek)\b/i, 'education'],
+
+  // Transport
+  [/\b(parkhaus|parking)\b/i, 'parking'],
+  [/\b(airport|flughafen|bahnhof)\b/i, 'transport'],
+];
+
+function inferTags(name) {
+  const tags = new Set();
+  for (const [rx, tag] of TAG_RULES) {
+    if (rx.test(name)) tags.add(tag);
+  }
+  // "hotel" implies accommodation, not food — remove food tags if hotel matched
+  // (e.g. "Rotterdam Marriott Hotel" shouldn't get 'bar' from lobby bar names)
+  return Array.from(tags);
+}
+
+// ---------------------------------------------------------------------------
 // Sheet schema (matches sheets.js HEADER, columns A–S)
 // ---------------------------------------------------------------------------
 const HEADER = [
@@ -127,27 +200,29 @@ for (const feature of features) {
   // Use the saved-date as added_date (when the user starred/saved the place).
   const addedDate = props.date ? props.date.slice(0, 10) : '';
 
-  const row = [
-    crypto.randomUUID(),          // id       — fresh UUID per row
-    loc.name || '',               // name
-    loc.address || '',            // address  — full string kept for reference
-    city,                         // city
-    state,                        // state
-    country,                      // country
-    '',                           // neighborhood — not in export
-    lat,                          // lat
-    lng,                          // lng
-    '',                           // tags     — fill in app
-    '',                           // notes    — fill in app
-    'FALSE',                      // visited  — conservative default; edit in sheet
-    '',                           // visited_date
-    props.google_maps_url || '',  // source_url
-    '',                           // place_id — not in export (CID ≠ place_id)
-    '',                           // photo_reference
-    '',                           // price_tier
-    addedDate,                    // added_date
-    '',                           // custom
-  ];
+    const tags = inferTags(loc.name || '');
+
+    const row = [
+      crypto.randomUUID(),          // id       — fresh UUID per row
+      loc.name || '',               // name
+      loc.address || '',            // address  — full string kept for reference
+      city,                         // city
+      state,                        // state
+      country,                      // country
+      '',                           // neighborhood — not in export
+      lat,                          // lat
+      lng,                          // lng
+      tags.join(','),               // tags     — inferred from name, edit in app
+      '',                           // notes    — fill in app
+      'FALSE',                      // visited  — conservative default; edit in sheet
+      '',                           // visited_date
+      props.google_maps_url || '',  // source_url
+      '',                           // place_id — not in export (CID ≠ place_id)
+      '',                           // photo_reference
+      '',                           // price_tier
+      addedDate,                    // added_date
+      '',                           // custom
+    ];
 
   rows.push(csvRow(row));
 }

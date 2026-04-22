@@ -596,6 +596,47 @@
   }
 
   // ------------------------------------------------------------------
+  // Lazy place enrichment — fires once when a place with no place_id is opened.
+  // Uses the same autocomplete → details session path as the add form, so cost
+  // is ~$0.017 per enriched place, billed only for places the user actually opens.
+  // After the first open the place_id (+ photo, neighborhood, price_tier) are
+  // persisted to the sheet so subsequent opens are free.
+  // ------------------------------------------------------------------
+  function enrichPlaceInBackground(p) {
+    (async () => {
+      try {
+        Places.newSessionToken();
+        const suggestions = await Places.autocomplete(p.name, { lat: p.lat, lng: p.lng });
+        if (!suggestions.length) return;
+        const d = await Places.details(suggestions[0].place_id);
+        let changed = false;
+        if (!p.place_id && d.place_id)           { p.place_id = d.place_id;                 changed = true; }
+        if (!p.photo_reference && d.photo_reference) { p.photo_reference = d.photo_reference; changed = true; }
+        if (p.price_tier == null && d.price_tier != null) { p.price_tier = d.price_tier;     changed = true; }
+        if (!p.neighborhood && d.neighborhood)   { p.neighborhood = d.neighborhood;          changed = true; }
+        if (!changed) return;
+        await Sheets.updatePlace(state.sheetId, p);
+        // If the detail sheet is still showing this place, inject the photo without
+        // a full re-render (avoids scroll-reset). Other enriched fields appear on next open.
+        const detailEl = U.qs('#detail-sheet');
+        const inner   = U.qs('#detail-inner');
+        if (detailEl && !detailEl.classList.contains('hidden') && inner) {
+          const titleEl = inner.querySelector('.detail-title');
+          if (titleEl && titleEl.textContent.trim() === p.name) {
+            if (d.photo_reference && !inner.querySelector('.detail-hero')) {
+              const hero = document.createElement('div');
+              hero.className = 'detail-hero';
+              hero.style.backgroundImage = `url('${Places.photoUrl(d.photo_reference, 1200)}')`;
+              const body = inner.querySelector('.detail-body');
+              if (body) inner.insertBefore(hero, body);
+            }
+          }
+        }
+      } catch (_) { /* enrichment is best-effort — never surface errors to the user */ }
+    })();
+  }
+
+  // ------------------------------------------------------------------
   // Detail sheet
   // ------------------------------------------------------------------
   function openDetail(id) {
@@ -670,6 +711,12 @@
       } catch (err) { console.error(err); U.toast('Could not delete'); }
     });
     openSheet('#detail-sheet');
+
+    // Kick off background enrichment for imported/manual places that have
+    // coordinates and a name but no place_id yet.
+    if (!p.place_id && p.name && p.lat != null && p.lng != null) {
+      enrichPlaceInBackground(p);
+    }
   }
 
   // ------------------------------------------------------------------
