@@ -4,3 +4,7 @@ config.js
 
 # macOS cruft
 .DS_Store
+
+# Google Maps exports and generated import files — contain personal data.
+*.json
+places_import*.csv
